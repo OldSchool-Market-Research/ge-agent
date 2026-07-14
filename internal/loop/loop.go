@@ -36,8 +36,8 @@ var submitReportDef = json.RawMessage(`{
         "items": {
           "type": "object",
           "properties": {
-            "id": {"type": "string", "description": "<archetype>-<item-slug>-<yyyymmdd>, e.g. G-earth-battlestaff-20260714"},
-            "archetype": {"type": "string", "enum": ["A","B","C","D","E","F","G"]},
+            "id": {"type": "string", "description": "<archetype>-<item-slug>-<yyyymmdd>, e.g. A-earth-battlestaff-20260714"},
+            "archetype": {"type": "string", "enum": ["A","B","C","D","E","F"]},
             "title": {"type": "string"},
             "thesis": {"type": "string"},
             "items": {"type": "array", "items": {"type": "object", "properties": {
@@ -47,7 +47,7 @@ var submitReportDef = json.RawMessage(`{
             "entry": {"type": "string", "description": "precise human rule"},
             "exit": {"type": "string", "description": "precise human rule"},
             "entry_price": {"type": "integer", "description": "the buy trigger in gp (plain integer)"},
-            "exit_price": {"type": "integer", "description": "the sell/alch target in gp (plain integer)"},
+            "exit_price": {"type": "integer", "description": "the sell target in gp (plain integer)"},
             "kill_price": {"type": ["integer","null"], "description": "price of items[0] beyond which the strategy is dead; null if not price-defined"},
             "horizon": {"type": "string"},
             "capital_required": {"type": "integer", "description": "gp, plain integer"},

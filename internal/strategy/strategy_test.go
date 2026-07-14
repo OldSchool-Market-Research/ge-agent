@@ -7,16 +7,16 @@ import (
 )
 
 const valid = `[{
-  "id": "G-earth-battlestaff-20260714", "archetype": "G",
-  "title": "Earth battlestaff alch floor", "thesis": "alch floor",
+  "id": "A-earth-battlestaff-20260714", "archetype": "A",
+  "title": "Earth battlestaff spread flip", "thesis": "durable post-tax spread",
   "items": [{"name": "Earth battlestaff", "id": 1399, "buy_limit": 18000, "members": true}],
-  "entry": "insta-buy", "exit": "high-alch 9300",
-  "entry_price": 8748, "exit_price": 9300, "kill_price": 9200,
+  "entry": "buy offer 8748", "exit": "sell offer 9300",
+  "entry_price": 8748, "exit_price": 9300, "kill_price": 8400,
   "horizon": "4h cycles", "capital_required": 157464000,
   "size": {"buy_limit": 18000, "vol_constrained": 35539, "units_used": 18000},
   "expected_value": {"per_cycle_gp": 7416000, "per_1h_gp": 1854000, "per_day_gp": 29664000, "roi_pct": 4.71},
   "confidence": "high", "confidence_why": "n=25", "evidence": "calls 5,32",
-  "invalidation": "nat > 250", "risks": ["fill_risk"], "paper_trade": "2 cycles"
+  "invalidation": "spread closes below tax", "risks": ["fill_risk"], "paper_trade": "2 cycles"
 }]`
 
 func TestParseValid(t *testing.T) {
@@ -50,13 +50,14 @@ func TestRejections(t *testing.T) {
 	}{
 		{"expression as number", "capital_required", "157,464,000 gp (18,000 x 8,748)", "must be"},
 		{"bad archetype", "archetype", "Z", "archetype"},
+		{"retired archetype G", "archetype", "G", "archetype"},
 		{"bad id", "id", "earth-staff", "id"},
 		{"zero entry price", "entry_price", 0, "entry_price"},
 		{"bad confidence", "confidence", "very high", "confidence"},
 		{"empty invalidation", "invalidation", "", "invalidation"},
 		{"entry above exit for A", "archetype", "A", "entry_price"}, // 8748 < 9300 ok... see below
 	}
-	for _, c := range cases[:6] {
+	for _, c := range cases[:7] {
 		t.Run(c.name, func(t *testing.T) {
 			reason := mutate(t, c.field, c.value)
 			if reason == "" || !strings.Contains(reason, c.wantSub) {

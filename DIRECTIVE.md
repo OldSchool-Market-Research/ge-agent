@@ -67,7 +67,6 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 | `margin_zscore(baseline_window, min_samples, max_age, limit)` | find spreads abnormally wide vs the item's *own* recent baseline (mean-reversion) |
 | `movers(window, min_price, min_volume, limit)` | find biggest % price moves over a window (events/news) |
 | `screen(metric, window, min_obs, limit)` | rank by `volatility` (range candidates) / `surge` (volume spikes) / `persistence` (% of time flippable) / `momentum` (trend slope) / `imbalance` (insta-buy vs insta-sell flow) / `range_position` (where price sits in its N-day band — entries for range trades) / `spread_gap` (quoted margin vs realized spread — stale-print traps) |
-| `alch_screen(min_volume, max_age, limit)` | find items whose insta-buy cost + a nature rune is under their high-alch value (the alch floor) |
 | `quote(name_or_id)` | live both-leg snapshot + per-leg freshness (`high_age_s`/`low_age_s`) for one item — the falsification primitive |
 | `quotes(names_or_ids[])` | the same, batched (≤25) — re-check a whole watchlist in one call |
 | `item_history(name_or_id, grain, lookback, source)` | OHLC / series for one item (`source` 1m=last-trade / 5m=block-avg+volume) — the evidence backbone |
@@ -84,7 +83,7 @@ For each candidate, do not stop at "it has a margin." Walk the chain:
 1. **Scan.** Call screening tools to pull candidate sets. Cast wide, then narrow.
 2. **Hypothesize.** State *one specific, falsifiable claim* about one item or group,
    **with a mechanism** — *why* does this edge exist and why does it persist?
-   (alch floor, player population cycle, recent update, supply sink, fixed shop price,
+   (player population cycle, recent update, supply sink, fixed shop price,
    speculative bubble, etc.). "It just has a spread" is not a mechanism.
 3. **Quantify.** Use `item_history` / `liquidity` to measure: how big is the edge, how
    *often* does it appear (`screen persistence`), how many samples back it, what's the
@@ -133,13 +132,8 @@ unlock as history accumulates.
   `obs` the tool returns, and emit `confidence: insufficient_history` when a bucket is
   thin. Always pair the global pattern with the specific item's own seasonality before
   acting on it.
-- **G. Alch-floor arbitrage** *(actionable now).* Items trading at or below
-  `highalch − nature_rune_cost` (`alch_screen`). Mechanism: high alchemy sets a hard
-  price floor — anyone can convert the item to `highalch` gp, so buys below the floor are
-  near-riskless up to throughput. Throughput = `min(buy_limit / 4h, ~1,200 casts/hr)`;
-  alching consumes the item (no GE tax, no resale). Invalidation: the buy leg goes stale,
-  or nature rune cost rises enough to close the gap. Falsify with `quote` freshness and
-  real volume, same as any flip.
+Do **not** propose high-alching strategies: alching is over-popular, weak gp/hr, and the
+best alch of the moment is trivially discoverable — there is no research edge in it.
 
 You may also combine items (e.g. set vs components, raw vs processed) if the tools
 support pulling both — flag these as experimental.
@@ -201,13 +195,13 @@ could later score it.
 > The YAML block in section 3 is the human view; the two must agree. In the JSON: all
 > gp/unit fields are **plain integers** (no expressions, no commas, no units), and three
 > structured price fields are required so the harness can paper-trade your call without
-> parsing prose: `entry_price` (the buy trigger, gp), `exit_price` (the sell/alch target,
+> parsing prose: `entry_price` (the buy trigger, gp), `exit_price` (the sell target,
 > gp), and `kill_price` (price of the primary item beyond which the strategy is dead;
 > null if your invalidation isn't price-defined).
 
 ```yaml
 - id:               <archetype>-<item-slug>-<yyyymmdd>
-  archetype:        A | B | C | D | E | F | G
+  archetype:        A | B | C | D | E | F
   title:            <one line>
   thesis:           <the claim AND the mechanism — why the edge exists and persists>
   items:            [{name, id, buy_limit, members}]
