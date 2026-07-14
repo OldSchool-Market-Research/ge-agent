@@ -1,0 +1,173 @@
+{
+  "run_started_at": "2026-07-14T02:45:17.862976725Z",
+  "report_path": "reports/20260714-0245.md",
+  "strategies": [
+    {
+      "id": "G-earth-battlestaff-20260714",
+      "archetype": "G",
+      "title": "Earth battlestaff — alch-floor arbitrage",
+      "thesis": "Earth battlestaff persistently trades ~450-500gp below its high-alch floor (9300 - nature rune 140 = 9160). The GE market has a structurally negative bid-ask (latest quote -173gp) because sellers know the alch option exists. Buying at-or-below the latest low and high-alching captures a near-riskless spread up to buy_limit throughput. The 24h band (8659-8875) never breaches the floor; the alch mechanism is a hard price floor set by game design.",
+      "items": [
+        {
+          "name": "Earth battlestaff",
+          "id": 1399,
+          "buy_limit": 18000,
+          "members": true
+        }
+      ],
+      "entry": "Buy offer ≤ 8,661 gp (latest 5m low). High-alch immediately upon fill.",
+      "exit": "High-alch for 9,160 gp net (highalch 9,300 minus nature rune 140). No GE sell leg.",
+      "entry_price": 8661,
+      "exit_price": 9160,
+      "kill_price": 9100,
+      "horizon": "1 cast every ~3 sec (well within the 1,200 casts/hr cap); full 4h cycle consumes capital and refills at next 4h reset.",
+      "capital_required": 50000000,
+      "size": {
+        "buy_limit": 18000,
+        "vol_constrained": 25222,
+        "units_used": 5772
+      },
+      "expected_value": {
+        "per_cycle_gp": 2881228,
+        "per_4h_gp": 2881228,
+        "per_day_gp": 17287368,
+        "roi_pct": 5.76
+      },
+      "confidence": "high",
+      "confidence_why": "24h history shows 25 hourly buckets all in band 8659-8875 (n=300+ obs), well below alch floor; per-item seasonality across 24 hours confirms the negative GE margin is structural (not a time-of-day effect). Alch-floor mechanism is permanent game design.",
+      "evidence": "alch_screen id=1399: buy_at=8661, highalch=9300, nat_cost=140, alch_margin=499, buy_limit=18000, profit_per_limit=8982000. item_history 24h 1h-grain: avg_low 8664-8789 across 25 buckets. quote id=1399: high=8661, low=8661, margin=-173. liquidity id=1399 1h: vol5m_total=35028, n_buckets=10. lookup_item id=1399: highalch=9300, buy_limit=18000, members=true.",
+      "invalidation": "Low price ≥ 9,100gp in any 5m bucket (market repriced to alch floor). Nature rune price rises \u003e200gp (would close gap).",
+      "risks": [
+        "update_risk — a Jagex alch-value change would collapse the floor",
+        "data_too_young — only ~26d of alch-floor stability observed",
+        "capital_concentration — single-name exposure uses entire 50M budget"
+      ],
+      "paper_trade": "Over next 3 cycles, record: actual fill rate at limit buy 8661, actual alch returns after nature-rune purchase, any 5m low ≥ 9100. If fills \u003c 80% of offer or any floor breach, demote to watch."
+    },
+    {
+      "id": "G-onyx-bolts-e-20260714",
+      "archetype": "G",
+      "title": "Onyx bolts (e) — alch-floor arbitrage",
+      "thesis": "Onyx bolts (e) is a high-value alch target (highalch 9000, nature rune 140 → net 8860). Market persistently prices it ~440gp below the alch floor across 24h (8429-8522 band, never approaching 8860). 11,000/4h buy_limit makes this a high-throughput alch play with similar mechanism to Earth battlestaff but on a different item (diversification within archetype).",
+      "items": [
+        {
+          "name": "Onyx bolts (e)",
+          "id": 9245,
+          "buy_limit": 11000,
+          "members": true
+        }
+      ],
+      "entry": "Buy offer ≤ 8,415 gp (latest 5m low). High-alch immediately upon fill.",
+      "exit": "High-alch for 8,860 gp net (highalch 9,000 - nature rune 140). No GE sell leg.",
+      "entry_price": 8415,
+      "exit_price": 8860,
+      "kill_price": 8810,
+      "horizon": "1 cast every ~3 sec; full 4h cycle consumes capital and refills at next 4h reset.",
+      "capital_required": 49993515,
+      "size": {
+        "buy_limit": 11000,
+        "vol_constrained": 20822,
+        "units_used": 5941
+      },
+      "expected_value": {
+        "per_cycle_gp": 2643745,
+        "per_4h_gp": 2643745,
+        "per_day_gp": 15862470,
+        "roi_pct": 5.29
+      },
+      "confidence": "high",
+      "confidence_why": "24h history shows 25 hourly buckets all in 8429-8522 range (n=300+ obs), well below 8860 floor. Per-item seasonality shows negative GE margin in every UTC hour (-128 to -146) — structural discount is permanent.",
+      "evidence": "alch_screen id=9245: buy_at=8456, highalch=9000, nat_cost=140, alch_margin=404, buy_limit=11000, profit_per_limit=4444000. item_history 24h 1h-grain: avg_low 8429-8495 across 25 buckets. quote id=9245: high=8456, low=8415, margin=-128. liquidity id=9245 1h: vol5m_total=28917, n_buckets=10. seasonality(hour) id=9245: all 24 UTC hours show negative GE margin (-128 to -146). lookup_item id=9245: highalch=9000, buy_limit=11000, members=true.",
+      "invalidation": "Low price ≥ 8,810gp for two consecutive 5m buckets. Nature rune spike \u003e200gp.",
+      "risks": [
+        "update_risk",
+        "capital_concentration — uses nearly all 50M",
+        "thin_vol_window — vol5m spiked to 6899 in latest bucket, average is 2892, snapback could slow fills"
+      ],
+      "paper_trade": "Track fill rate on 8,415gp offer; if \u003c 80% over 3 cycles OR any 5m low ≥ 8810, exit."
+    },
+    {
+      "id": "A-blue-dragon-leather-20260714",
+      "archetype": "A",
+      "title": "Blue dragon leather — passive spread flip",
+      "thesis": "Blue dragon leather is a high-volume crafting by-product (~10,948 units/5m, one of the highest in the market). The persistent ~70-150gp post-tax spread reflects liquidity friction (crafter sell pressure vs. d'hide-buyer demand) rather than any transient event. 24h history shows tight 2079-2247 band with the spread present in 88% of hourly buckets. The mechanism (steady crafter supply vs steady d'hide demand) is structural and self-reinforcing.",
+      "items": [
+        {
+          "name": "Blue dragon leather",
+          "id": 2505,
+          "buy_limit": 13000,
+          "members": true
+        }
+      ],
+      "entry": "Buy offer ≤ 2,126 gp (latest low). Place simultaneously with sell offer.",
+      "exit": "Sell offer ≥ 2,249 gp (latest high).",
+      "entry_price": 2126,
+      "exit_price": 2249,
+      "kill_price": 2050,
+      "horizon": "Each fill cycle: place buy, wait for fill (typically \u003c30 min for 10k+ vol/5m), place sell, wait for fill (~30-90 min). Roughly 1 cycle per 4h block.",
+      "capital_required": 27638000,
+      "size": {
+        "buy_limit": 13000,
+        "vol_constrained": 78825,
+        "units_used": 13000
+      },
+      "expected_value": {
+        "per_cycle_gp": 1027000,
+        "per_4h_gp": 1027000,
+        "per_day_gp": 6162000,
+        "roi_pct": 3.72
+      },
+      "confidence": "high",
+      "confidence_why": "24h 1h-grain history shows spread present in 22/25 hourly buckets (88%). top_flips shows it at rank #1 by filled_profit (864,892gp) with both legs fresh within 7 minutes. Steady crafter/d'hide supply-demand is structural.",
+      "evidence": "top_flips filled_profit rank #1: id=2505 buy=2126 sell=2249 margin=79 buy_limit=13000 vol5m=10948. item_history 24h: avg_high 2103-2247, avg_low 2079-2209 across 25 buckets. quote id=2505: high=2249 high_age_s=433, low=2126 low_age_s=389. liquidity id=2505 1h: vol5m_total=14589. lookup_item id=2505: buy_limit=13000.",
+      "invalidation": "Persistence \u003c 60% over a 4h window. Realized spread collapses vs quoted margin (stale-print trap — screen spread_gap flags). Both legs go stale \u003e 30min.",
+      "risks": [
+        "self_impact — buying 13k units is 4% of 1h volume; selling another 4%; manageable but watch for slippage",
+        "data_too_young — only ~26d of consistent spread observed"
+      ],
+      "paper_trade": "Run one full cycle, record fill times for buy and sell offers, actual realized margin after tax. Compare against the 79gp quoted margin."
+    },
+    {
+      "id": "A-stamina-potion-4-20260714",
+      "archetype": "A",
+      "title": "Stamina potion(4) — passive spread flip with trend tailwind",
+      "thesis": "Stamina potion(4) is a high-volume PvM consumable (avg ~3879 units/5m). The 24h block-average history shows a clear upward drift: avg_high climbs 3498 → 3813 (+9% over 24h). The current ~105gp spread sits at the upper end of its typical 50-180gp range. Trade the persistent spread while it lasts, with a hard exit if the trend reverses. The trend tailwind boosts near-term confidence but raises reversal risk — hence medium (not high) confidence.",
+      "items": [
+        {
+          "name": "Stamina potion(4)",
+          "id": 12625,
+          "buy_limit": 2000,
+          "members": true
+        }
+      ],
+      "entry": "Buy offer ≤ 3,564 gp (latest low).",
+      "exit": "Sell offer ≥ 3,719 gp (latest high).",
+      "entry_price": 3564,
+      "exit_price": 3719,
+      "kill_price": 3450,
+      "horizon": "~1-2h per leg given 3879 units/5m liquidity. Cycle ~3-4h.",
+      "capital_required": 7128000,
+      "size": {
+        "buy_limit": 2000,
+        "vol_constrained": 27929,
+        "units_used": 2000
+      },
+      "expected_value": {
+        "per_cycle_gp": 210000,
+        "per_4h_gp": 210000,
+        "per_day_gp": 1260000,
+        "roi_pct": 2.95
+      },
+      "confidence": "medium",
+      "confidence_why": "24h history shows spread persistent (in most buckets), but the clear upward price drift (+9% over 24h) means we're trading INTO a trend. n=24 hourly buckets supports the spread claim; trend duration is unproven beyond 24h.",
+      "evidence": "top_flips rank #6 by filled_profit: id=12625 buy=3540 sell=3719 margin=105 buy_limit=2000 vol5m=3879. item_history 24h 1h-grain: avg_high 3395-3813 (uptrend), avg_low 3344-3647. quote id=12625: high=3719 high_age_s=61, low=3564 low_age_s=61. liquidity id=12625 1h: vol5m_total=17991. lookup_item id=12625: id=12625, buy_limit=2000.",
+      "invalidation": "Close \u003c 3,500gp (trend reversal), OR margin \u003c 40gp for \u003e2h, OR both legs go stale \u003e 30min during active hours.",
+      "risks": [
+        "update_risk — if Jagex adjusts stamina potion price/usage, demand shifts",
+        "trend_reversal — riding into an uptrend means a snap-back hits open inventory hard",
+        "data_too_young — only ~24h trend evidence"
+      ],
+      "paper_trade": "Track price + spread over 4h. If price closes a 15m bucket \u003c 3,500, immediately dump inventory at market. If margin persists \u003c 40gp, demote."
+    }
+  ]
+}
