@@ -65,8 +65,8 @@ type Sidecar struct {
 }
 
 var (
-	idRe        = regexp.MustCompile(`^[A-G]-[a-z0-9-]+-\d{8}$`)
-	archetypes  = map[string]bool{"A": true, "B": true, "C": true, "D": true, "E": true, "F": true, "G": true}
+	idRe        = regexp.MustCompile(`^[A-F]-[a-z0-9-]+-\d{8}$`)
+	archetypes  = map[string]bool{"A": true, "B": true, "C": true, "D": true, "E": true, "F": true}
 	confidences = map[string]bool{"high": true, "medium": true, "low": true, "insufficient_history": true}
 )
 
@@ -114,9 +114,9 @@ func Validate(list []Strategy) string {
 		}
 		switch {
 		case !idRe.MatchString(s.ID):
-			return p("id", `must match ^[A-G]-<item-slug>-<yyyymmdd>$ (e.g. "G-earth-battlestaff-20260714")`)
+			return p("id", `must match ^[A-F]-<item-slug>-<yyyymmdd>$ (e.g. "A-earth-battlestaff-20260714")`)
 		case !archetypes[s.Archetype]:
-			return p("archetype", "must be one of A-G")
+			return p("archetype", "must be one of A-F")
 		case strings.TrimSpace(s.Title) == "":
 			return p("title", "required")
 		case strings.TrimSpace(s.Thesis) == "":
@@ -152,8 +152,8 @@ func Validate(list []Strategy) string {
 				return fmt.Sprintf("strategies[%d].items[%d].name: required", i, j)
 			}
 		}
-		// Long spreads must buy below sell. Not enforced for G (exit is the
-		// alch value) or D/E/F (direction may be short / temporal).
+		// Long spreads must buy below sell. Not enforced for D/E/F
+		// (direction may be short / temporal).
 		switch s.Archetype {
 		case "A", "B", "C":
 			if s.EntryPrice >= s.ExitPrice {
