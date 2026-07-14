@@ -63,13 +63,16 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 
 | Tool | Use it to… |
 |---|---|
-| `top_flips(min_volume, max_age, members?, sort_by, limit)` | get the fresh, liquid flip watchlist ranked by margin / ROI% / profit-per-limit |
+| `top_flips(min_volume, max_age, members?, sort_by, limit)` | get the fresh, liquid flip watchlist ranked by `margin` / `roi_pct` / `profit_per_limit` / `filled_profit` (fill-aware: `margin × min(buy_limit, vol5m)`) |
 | `margin_zscore(baseline_window, min_samples, max_age, limit)` | find spreads abnormally wide vs the item's *own* recent baseline (mean-reversion) |
 | `movers(window, min_price, min_volume, limit)` | find biggest % price moves over a window (events/news) |
-| `screen(metric, window, min_obs, limit)` | rank by `volatility` (range candidates) / `surge` (volume spikes) / `persistence` (% of time flippable) / `momentum` (trend slope) |
+| `screen(metric, window, min_obs, limit)` | rank by `volatility` (range candidates) / `surge` (volume spikes) / `persistence` (% of time flippable) / `momentum` (trend slope) / `imbalance` (insta-buy vs insta-sell flow) / `range_position` (where price sits in its N-day band — entries for range trades) / `spread_gap` (quoted margin vs realized spread — stale-print traps) |
+| `alch_screen(min_volume, max_age, limit)` | find items whose insta-buy cost + a nature rune is under their high-alch value (the alch floor) |
 | `quote(name_or_id)` | live both-leg snapshot + per-leg freshness (`high_age_s`/`low_age_s`) for one item — the falsification primitive |
+| `quotes(names_or_ids[])` | the same, batched (≤25) — re-check a whole watchlist in one call |
 | `item_history(name_or_id, grain, lookback, source)` | OHLC / series for one item (`source` 1m=last-trade / 5m=block-avg+volume) — the evidence backbone |
 | `liquidity(name_or_id, window)` | summed recent 5m volume for sizing |
+| `seasonality(dimension, name_or_id?)` | hour-of-day / day-of-week margin structure, global or per item — check `obs` before trusting a bucket |
 | `lookup_item(query, limit)` | resolve a name → id (+ `buy_limit`, `members`, alch values); fuzzy, ranked candidates |
 
 ---
@@ -122,11 +125,20 @@ unlock as history accumulates.
 - **E. Momentum / trend** *(actionable, needs a trailing exit).* `screen momentum`
   (`regr_slope`) for items trending up/down. Ride with a defined trailing exit; state the
   invalidation level.
-- **F. Temporal / seasonal arbitrage** *(LOCKED until enough history).* "Cheaper at hour
-  H, dearer at hour K" (player-population cycle), or weekday/weekend effects. **Requires
-  ~1 week for hour-of-day, ~3–4 weeks for day-of-week.** Until the data covers it, emit
-  these only as `confidence: insufficient_history` **candidates**, never as actionable
-  strategies. Re-evaluate as the window fills.
+- **F. Temporal / seasonal arbitrage** *(hour-of-day unlocked; day-of-week just unlocked
+  — check `obs`).* "Cheaper at hour H, dearer at hour K" (player-population cycle), or
+  weekday/weekend effects, via `seasonality`. Hour-of-day has ample samples; day-of-week
+  has only a few observations of each weekday per month of data — tie confidence to the
+  `obs` the tool returns, and emit `confidence: insufficient_history` when a bucket is
+  thin. Always pair the global pattern with the specific item's own seasonality before
+  acting on it.
+- **G. Alch-floor arbitrage** *(actionable now).* Items trading at or below
+  `highalch − nature_rune_cost` (`alch_screen`). Mechanism: high alchemy sets a hard
+  price floor — anyone can convert the item to `highalch` gp, so buys below the floor are
+  near-riskless up to throughput. Throughput = `min(buy_limit / 4h, ~1,200 casts/hr)`;
+  alching consumes the item (no GE tax, no resale). Invalidation: the buy leg goes stale,
+  or nature rune cost rises enough to close the gap. Falsify with `quote` freshness and
+  real volume, same as any flip.
 
 You may also combine items (e.g. set vs components, raw vs processed) if the tools
 support pulling both — flag these as experimental.
@@ -185,7 +197,7 @@ could later score it.
 
 ```yaml
 - id:               <archetype>-<item-slug>-<yyyymmdd>
-  archetype:        A | B | C | D | E | F
+  archetype:        A | B | C | D | E | F | G
   title:            <one line>
   thesis:           <the claim AND the mechanism — why the edge exists and persists>
   items:            [{name, id, buy_limit, members}]
