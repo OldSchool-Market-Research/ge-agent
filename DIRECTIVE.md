@@ -97,7 +97,8 @@ For each candidate, do not stop at "it has a margin." Walk the chain:
    - For a "cheap now" claim: cheap vs *what* baseline, over what lookback?
    If the disconfirming check fails, **discard the hypothesis** — don't soften it.
 5. **Size.** Compute realistic gp: `margin × min(buy_limit, ~15% of recent 5m volume)`
-   per cycle, then per 4h and per day. State capital required and ROI%. All post-tax.
+   per cycle, then per hour and per day. Per-hour = one full buy-limit cycle ÷ 4
+   (limits reset every 4h). State capital required and ROI%. All post-tax.
 6. **Spec.** Emit the strategy object (schema below).
 7. **Rank.** Order by risk-adjusted gp/day. Confidence must be *earned by evidence*
    (sample size + lookback covered), not asserted.
@@ -163,7 +164,7 @@ candidates were scanned vs how many strategies survived. One line each.
 ### 2. Digest (what a human reads first)
 A ranked table of the top 3–5 surviving strategies:
 
-| # | item | archetype | buy ≤ | sell ≥ | units | gp/4h (post-tax) | ROI% | confidence |
+| # | item | archetype | buy ≤ | sell ≥ | units | gp/1h (post-tax) | ROI% | confidence |
 |---|------|-----------|-------|--------|-------|------------------|------|------------|
 
 Then 1–2 sentences per strategy: the thesis, and the one thing that would kill it.
@@ -220,7 +221,7 @@ could later score it.
     units_used:     <min of the two>
   expected_value:
     per_cycle_gp:   <post-tax>
-    per_4h_gp:      <post-tax>
+    per_1h_gp:      <post-tax, per-4h buy-limit cycle ÷ 4>
     per_day_gp:     <post-tax>
     roi_pct:        <margin / low × 100>
   confidence:       high | medium | low | insufficient_history
@@ -272,7 +273,7 @@ could later score it.
 > `liquidity` → 3,400 units/5m. `buy_limit` 13,000/4h.
 > **Falsify:** both legs fresh within 6 min ✓. Not a thin-item artifact (n=41) ✓.
 > 15% of volume = 510 units/5m → buy_limit binds first, not volume ✓.
-> **Size:** 70 × 13,000 = 910k post-tax / 4h, ROI ~5.6%, capital ~16.1M.
+> **Size:** 70 × 13,000 = 910k post-tax / 4h ≈ 228k/hr, ROI ~5.6%, capital ~16.1M.
 > **Invalidation:** persistence drops below ~60% or either leg goes stale > 20 min.
 
 That's the bar: a claim with a mechanism, numbers from the tools, an explicit kill

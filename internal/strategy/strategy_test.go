@@ -14,7 +14,7 @@ const valid = `[{
   "entry_price": 8748, "exit_price": 9300, "kill_price": 9200,
   "horizon": "4h cycles", "capital_required": 157464000,
   "size": {"buy_limit": 18000, "vol_constrained": 35539, "units_used": 18000},
-  "expected_value": {"per_cycle_gp": 7416000, "per_4h_gp": 7416000, "per_day_gp": 29664000, "roi_pct": 4.71},
+  "expected_value": {"per_cycle_gp": 7416000, "per_1h_gp": 1854000, "per_day_gp": 29664000, "roi_pct": 4.71},
   "confidence": "high", "confidence_why": "n=25", "evidence": "calls 5,32",
   "invalidation": "nat > 250", "risks": ["fill_risk"], "paper_trade": "2 cycles"
 }]`
