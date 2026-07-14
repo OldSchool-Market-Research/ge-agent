@@ -1,0 +1,9 @@
+.direnv/
+.env
+result*
+bin/
+
+# go
+*.exe
+*.test
+*.out
