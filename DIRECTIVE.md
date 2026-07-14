@@ -195,6 +195,15 @@ was skeptical, not just a hype reel — and it stops the next run re-chasing the
 Be concrete enough that a human could place the offers from this alone, and a backtester
 could later score it.
 
+> **The authoritative copy is the `strategies` parameter of `submit_report`** — a JSON
+> array the harness validates and downstream systems (orchestrator scoreboard) ingest.
+> The YAML block in section 3 is the human view; the two must agree. In the JSON: all
+> gp/unit fields are **plain integers** (no expressions, no commas, no units), and three
+> structured price fields are required so the harness can paper-trade your call without
+> parsing prose: `entry_price` (the buy trigger, gp), `exit_price` (the sell/alch target,
+> gp), and `kill_price` (price of the primary item beyond which the strategy is dead;
+> null if your invalidation isn't price-defined).
+
 ```yaml
 - id:               <archetype>-<item-slug>-<yyyymmdd>
   archetype:        A | B | C | D | E | F | G

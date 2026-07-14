@@ -21,6 +21,7 @@ type Config struct {
 	MaxTurns   int           // GE_AGENT_MAX_TURNS
 	MaxTokens  int           // GE_AGENT_MAX_TOKENS per response
 	Directive  string        // GE_AGENT_DIRECTIVE — path to DIRECTIVE.md
+	BriefFile  string        // GE_AGENT_BRIEF_FILE — optional per-run brief appended to the system prompt
 	Timeout    time.Duration // GE_AGENT_RUN_TIMEOUT — whole-run ceiling
 }
 
@@ -35,6 +36,7 @@ func Load() (*Config, error) {
 		MaxTurns:   getenvInt("GE_AGENT_MAX_TURNS", 50),
 		MaxTokens:  getenvInt("GE_AGENT_MAX_TOKENS", 16384),
 		Directive:  getenv("GE_AGENT_DIRECTIVE", "DIRECTIVE.md"),
+		BriefFile:  os.Getenv("GE_AGENT_BRIEF_FILE"),
 		Timeout:    time.Duration(getenvInt("GE_AGENT_RUN_TIMEOUT_S", 3600)) * time.Second,
 	}
 	if c.APIKey == "" {

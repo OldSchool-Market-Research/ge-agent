@@ -5,6 +5,7 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/osrs-ge/ge-agent/internal/mcpbridge"
+	"github.com/osrs-ge/ge-agent/internal/strategy"
 )
 
 // requiredSections must appear as markdown headings, in this order
@@ -61,6 +63,24 @@ func Write(path, markdown string, calls []mcpbridge.CallRecord) error {
 	}
 	_, err = f.WriteString(appendix(calls))
 	return err
+}
+
+// SidecarPath derives the machine-readable artifact path from a report path.
+func SidecarPath(reportPath string) string {
+	return strings.TrimSuffix(reportPath, ".md") + ".strategies.json"
+}
+
+// WriteSidecar persists the validated strategy objects next to the report —
+// the copy the orchestrator ingests. Same O_EXCL discipline as the report.
+func WriteSidecar(reportPath string, sc strategy.Sidecar) error {
+	f, err := os.OpenFile(SidecarPath(reportPath), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	return enc.Encode(sc)
 }
 
 // appendix renders the harness-witnessed tool-call log. This is the
