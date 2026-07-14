@@ -55,9 +55,9 @@ var submitReportDef = json.RawMessage(`{
               "buy_limit": {"type": "integer"}, "vol_constrained": {"type": "integer"}, "units_used": {"type": "integer"}
             }, "required": ["buy_limit","vol_constrained","units_used"]},
             "expected_value": {"type": "object", "properties": {
-              "per_cycle_gp": {"type": "integer"}, "per_4h_gp": {"type": "integer"},
+              "per_cycle_gp": {"type": "integer"}, "per_1h_gp": {"type": "integer", "description": "post-tax gp per hour (one full 4h buy-limit cycle ÷ 4)"},
               "per_day_gp": {"type": "integer"}, "roi_pct": {"type": "number"}
-            }, "required": ["per_cycle_gp","per_4h_gp","per_day_gp","roi_pct"]},
+            }, "required": ["per_cycle_gp","per_1h_gp","per_day_gp","roi_pct"]},
             "confidence": {"type": "string", "enum": ["high","medium","low","insufficient_history"]},
             "confidence_why": {"type": "string"},
             "evidence": {"type": "string"},

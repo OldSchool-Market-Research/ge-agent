@@ -29,7 +29,7 @@ type Size struct {
 
 type ExpectedValue struct {
 	PerCycleGp int64   `json:"per_cycle_gp"`
-	Per4hGp    int64   `json:"per_4h_gp"`
+	Per1hGp    int64   `json:"per_1h_gp"`
 	PerDayGp   int64   `json:"per_day_gp"`
 	RoiPct     float64 `json:"roi_pct"`
 }
@@ -98,8 +98,8 @@ func isTypeError(err error, target **json.UnmarshalTypeError) bool {
 	return ok
 }
 
-// Validate applies the gate rules. Semantic plausibility (does per_4h ≈
-// margin × units) is deliberately NOT checked — that is the evaluator's job,
+// Validate applies the gate rules. Semantic plausibility (does per_1h ≈
+// margin × units / 4) is deliberately NOT checked — that is the evaluator's job,
 // and over-gating causes retry loops.
 func Validate(list []Strategy) string {
 	if len(list) == 0 {
