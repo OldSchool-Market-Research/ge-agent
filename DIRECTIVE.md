@@ -244,6 +244,10 @@ A ranked table of the top 3–5 surviving strategies:
 The "when / trigger" column carries the kind-specific condition: S = the windows in
 human time ("buy Tue 02:00–05:00 UTC"), V = "(armed — fires at |z|≥4)", C = "any time
 both legs fresh", U = the event date, H = the horizon.
+**Bucket → human time, do the arithmetic carefully:** `day = bucket ÷ 24` with
+0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat; `hour = bucket mod 24`. So bucket
+76 = Wed 04:00 UTC, bucket 148 = Sat 04:00 UTC. The structured window is what gets
+paper-traded — prose that contradicts it misleads the human trader.
 Then 1–2 sentences per strategy: the thesis, and the one thing that would kill it.
 
 ### 3. Strategies (the structured objects)
