@@ -25,19 +25,19 @@ const submitReportTool = "submit_report"
 
 var submitReportDef = json.RawMessage(`{
   "name": "submit_report",
-  "description": "Submit the run's final markdown report plus the machine-readable strategy objects. Call exactly once, at the end. The harness validates the required sections (Header, Digest, Strategies, Proof, Discarded — in order) and the strategies array, writes the file with a UTC timestamp name, and appends the authoritative tool-call log. Do not include the appendix yourself.",
+  "description": "Submit the run's final markdown report plus the machine-readable strategy objects. Call exactly once, at the end. The harness validates the required sections (Header, Digest, Strategies, Proof, Discarded — in order), the strategies array, and signal_verdicts, writes the file with a UTC timestamp name, and appends the authoritative tool-call log. Do not include the appendix yourself.",
   "input_schema": {
     "type": "object",
     "properties": {
       "markdown": {"type": "string", "description": "The complete report markdown, all five sections in order"},
       "strategies": {
         "type": "array",
-        "description": "Machine-readable strategy objects, one per shipped strategy — the authoritative copy downstream systems ingest (the markdown Strategies section is the human view; the two must agree). ALL gp/unit fields must be plain integers: no expressions, no commas, no units.",
+        "description": "Machine-readable strategy objects, one per shipped strategy — the authoritative copy downstream systems ingest (the markdown Strategies section is the human view; the two must agree). ALL gp/unit fields must be plain integers: no expressions, no commas, no units. Kind-specific required fields: S needs buy_window+sell_window; V needs trigger+direction+kill_price; C needs legs+relation_id; U needs event+direction+kill_price; H needs eval_window_hours+kill_price. Fields belonging to another archetype are rejected.",
         "items": {
           "type": "object",
           "properties": {
-            "id": {"type": "string", "description": "<archetype>-<item-slug>-<yyyymmdd>, e.g. A-earth-battlestaff-20260714"},
-            "archetype": {"type": "string", "enum": ["A","B","C","D","E","F"]},
+            "id": {"type": "string", "description": "<archetype>-<item-slug>-<yyyymmdd>, e.g. S-yew-logs-20260720"},
+            "archetype": {"type": "string", "enum": ["S","V","C","U","H"]},
             "title": {"type": "string"},
             "thesis": {"type": "string"},
             "items": {"type": "array", "items": {"type": "object", "properties": {
@@ -46,16 +46,16 @@ var submitReportDef = json.RawMessage(`{
             }, "required": ["name","id"]}},
             "entry": {"type": "string", "description": "precise human rule"},
             "exit": {"type": "string", "description": "precise human rule"},
-            "entry_price": {"type": "integer", "description": "the buy trigger in gp (plain integer)"},
-            "exit_price": {"type": "integer", "description": "the sell target in gp (plain integer)"},
-            "kill_price": {"type": ["integer","null"], "description": "price of items[0] beyond which the strategy is dead; null if not price-defined"},
+            "entry_price": {"type": "integer", "description": "the buy trigger in gp (plain integer). For C: total input cost per conversion"},
+            "exit_price": {"type": "integer", "description": "the sell target in gp (plain integer). For C: post-tax output revenue per conversion"},
+            "kill_price": {"type": ["integer","null"], "description": "price of items[0] beyond which the strategy is dead; null only where the archetype allows (required for V, U, H)"},
             "horizon": {"type": "string"},
             "capital_required": {"type": "integer", "description": "gp, plain integer"},
             "size": {"type": "object", "properties": {
               "buy_limit": {"type": "integer"}, "vol_constrained": {"type": "integer"}, "units_used": {"type": "integer"}
             }, "required": ["buy_limit","vol_constrained","units_used"]},
             "expected_value": {"type": "object", "properties": {
-              "per_cycle_gp": {"type": "integer"}, "per_1h_gp": {"type": "integer", "description": "post-tax gp per hour (one full 4h buy-limit cycle ÷ 4)"},
+              "per_cycle_gp": {"type": "integer"}, "per_1h_gp": {"type": "integer", "description": "post-tax gp per hour on the archetype's own cycle (S: per_cycle/168; H: per_cycle/horizon hours; C: one 4h buy-limit cycle / 4)"},
               "per_day_gp": {"type": "integer"}, "roi_pct": {"type": "number"}
             }, "required": ["per_cycle_gp","per_1h_gp","per_day_gp","roi_pct"]},
             "confidence": {"type": "string", "enum": ["high","medium","low","insufficient_history"]},
@@ -63,10 +63,41 @@ var submitReportDef = json.RawMessage(`{
             "evidence": {"type": "string"},
             "invalidation": {"type": "string"},
             "risks": {"type": "array", "items": {"type": "string"}},
-            "paper_trade": {"type": "string"}
+            "paper_trade": {"type": "string"},
+            "buy_window": {"type": ["object","null"], "description": "S ONLY, required for S: UTC hour-of-week range, from_how/to_how 0-167 (dow*24+hour, dow 0=Sunday), inclusive, from>to wraps", "properties": {
+              "from_how": {"type": "integer"}, "to_how": {"type": "integer"}}, "required": ["from_how","to_how"]},
+            "sell_window": {"type": ["object","null"], "description": "S ONLY, required for S: must not overlap buy_window", "properties": {
+              "from_how": {"type": "integer"}, "to_how": {"type": "integer"}}, "required": ["from_how","to_how"]},
+            "trigger": {"type": ["object","null"], "description": "V ONLY, required for V: the strategy ships ARMED and starts paper-trading when this fires", "properties": {
+              "metric": {"type": "string", "enum": ["volume_zscore","price_move_pct"]},
+              "threshold": {"type": "number"},
+              "direction": {"type": "string", "enum": ["above","below"]},
+              "window": {"type": "string", "description": "metric window, e.g. 1h"}
+            }, "required": ["metric","threshold","direction","window"]},
+            "direction": {"type": ["string","null"], "enum": ["ride","fade",null], "description": "V and U ONLY, required for both: ride the move or fade it"},
+            "legs": {"type": "array", "description": "C ONLY, required for C: one row per conversion leg, numbers copied from combo_quote", "items": {"type": "object", "properties": {
+              "item_id": {"type": "integer"}, "name": {"type": "string"},
+              "side": {"type": "string", "enum": ["buy","sell"]},
+              "qty": {"type": "integer", "description": "units per conversion"},
+              "price": {"type": "integer", "description": "gp per unit"}
+            }, "required": ["item_id","name","side","qty","price"]}},
+            "relation_id": {"type": ["integer","null"], "description": "C ONLY, required for C: the item_relations row from list_relations"},
+            "event": {"type": ["object","null"], "description": "U ONLY, required for U: the game event this trades (date within ±14 days)", "properties": {
+              "date": {"type": "string", "description": "YYYY-MM-DD UTC"}, "description": {"type": "string"}
+            }, "required": ["date","description"]},
+            "eval_window_hours": {"type": ["integer","null"], "description": "How long the harness paper-trades before confirm/expire. REQUIRED for H (168-672). Optional elsewhere (defaults: S 168, V 96 from trigger, C 48, U 72); S minimum 168"}
           },
           "required": ["id","archetype","title","thesis","items","entry","exit","entry_price","exit_price","horizon","capital_required","size","expected_value","confidence","invalidation"]
         }
+      },
+      "signal_verdicts": {
+        "type": "array",
+        "description": "One verdict per ASSIGNED signal from the run brief's 'Assigned candidates' section (omit if the brief assigned none). Every assigned signal must be either shipped (a strategy came from it) or dismissed with the falsification reason.",
+        "items": {"type": "object", "properties": {
+          "signal_id": {"type": "integer"},
+          "verdict": {"type": "string", "enum": ["shipped","dismissed"]},
+          "reason": {"type": "string", "description": "for shipped: which strategy id; for dismissed: what killed it"}
+        }, "required": ["signal_id","verdict","reason"]}
       }
     },
     "required": ["markdown", "strategies"]
@@ -192,8 +223,9 @@ func collectToolUses(blocks []llm.Block) []llm.Block {
 
 func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, bridge *mcpbridge.Bridge) (string, string) {
 	var args struct {
-		Markdown   string          `json:"markdown"`
-		Strategies json.RawMessage `json:"strategies"`
+		Markdown       string          `json:"markdown"`
+		Strategies     json.RawMessage `json:"strategies"`
+		SignalVerdicts json.RawMessage `json:"signal_verdicts"`
 	}
 	if err := json.Unmarshal(input, &args); err != nil || strings.TrimSpace(args.Markdown) == "" {
 		return "", "markdown must be a non-empty string"
@@ -205,11 +237,16 @@ func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, 
 	if reason != "" {
 		return "", reason
 	}
+	verdicts, reason := strategy.ParseSignalVerdicts(args.SignalVerdicts)
+	if reason != "" {
+		return "", reason
+	}
 	if err := report.Write(reportPath, args.Markdown, bridge.AuditLog()); err != nil {
 		return "", "write failed: " + err.Error()
 	}
 	if err := report.WriteSidecar(reportPath, strategy.Sidecar{
 		RunStartedAt: runStart, ReportPath: reportPath, Strategies: strategies,
+		SignalVerdicts: verdicts,
 	}); err != nil {
 		return "", "sidecar write failed: " + err.Error()
 	}
