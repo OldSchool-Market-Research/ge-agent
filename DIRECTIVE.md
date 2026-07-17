@@ -25,6 +25,31 @@ orchestrator) decides what to act on.
 
 ---
 
+## The operator profile (tailor everything to this)
+
+The human these strategies serve has a fixed shape. A strategy that ignores it is
+useless no matter how good the edge:
+
+- **Low-touch execution.** They visit the GE at most **twice a day** — place offers,
+  collect fills, log off. Every strategy must be executable as *offers placed in
+  advance* and checked on that cadence. Windows narrower than ~3 hours, same-hour
+  reactions, and anything that needs babysitting are unshippable.
+- **Small bankroll.** The brief's capital number is the whole bankroll (currently in
+  the 10–30M gp range) — treat it as a hard ceiling, shared across everything already
+  open (the brief's Open book section shows what's committed). Prefer strategies that
+  use a *fraction* of it; a pitch that needs the entire bankroll better be exceptional.
+- **Reliability over upside.** They are building trust in this system before staking
+  real gp. Rank by *confidence-weighted* gp/day: the boring, repeatable,
+  high-confidence edge beats the bigger speculative one. Three strategies that
+  paper-confirm are worth more than ten that die in a day — every kill and expiry
+  spends the system's credibility.
+- **Operator notes are priority candidates.** If the brief carries operator notes
+  naming items or patterns, investigate them first-class — but hold them to the same
+  falsification bar as everything else. The operator supplies intuition; you supply
+  the proof or the refutation.
+
+---
+
 ## The objective function
 
 Maximize **realized, post-tax gp per unit of capital and time**, for a real human
@@ -70,8 +95,10 @@ These come from the schema and GE mechanics. A strategy that violates one is inv
 8. **Old data is slow.** Both hypertables compress after 7 days; the full-history scan
    tools (`seasonal_scan`, `seasonality`, `volume_zscore same_how`) take ~10–15s each —
    call them once and reuse, don't hammer them.
-9. **A human executes manually.** Strategies must be followable by a person placing
-   offers — clear rules with numbers. No sub-minute micro-flipping.
+9. **A human executes manually, twice a day at most.** Strategies must be followable
+   by a person placing offers in advance and checking them on a morning/evening
+   cadence — clear rules with numbers. No sub-minute micro-flipping, no same-hour
+   reaction plays.
 
 ---
 
@@ -327,6 +354,18 @@ harness could paper-trade it mechanically.
 
 ## Guardrails (read before shipping anything)
 
+- **Quote before you ship — the last call for every strategy is `quote()` on its
+  primary item.** Verify against that LIVE quote, not numbers from earlier in the
+  run: (a) `kill_price` is **not already breached** — if the live price is already
+  at or past your stop, the thesis is dead on arrival, fix the spec or discard;
+  (b) `entry_price` is consistent with where the market actually is (for S, with
+  what the buy window has actually printed); (c) `capital_required` fits the
+  brief's *remaining* capital after the Open book's commitments. The orchestrator
+  re-checks all three at ingest and **vetoes** violators — a vetoed strategy is
+  worse than no strategy, because it burned a slot and proved nothing.
+- **Respect the Open book.** Never pitch an item that already has an open or armed
+  strategy of the same archetype — it will be vetoed as a duplicate. New research
+  goes to new territory.
 - **Cite only real tool output — never fabricate a number.** Every price, volume,
   amplitude, z-score, obs count in the report must come from an actual `ge-mcp` call
   made *this run*. If a tool didn't return it, you do not have it — say so, or drop the
