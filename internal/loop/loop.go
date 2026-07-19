@@ -32,12 +32,12 @@ var submitReportDef = json.RawMessage(`{
       "markdown": {"type": "string", "description": "The complete report markdown, all five sections in order"},
       "strategies": {
         "type": "array",
-        "description": "Machine-readable strategy objects, one per shipped strategy — the authoritative copy downstream systems ingest (the markdown Strategies section is the human view; the two must agree). ALL gp/unit fields must be plain integers: no expressions, no commas, no units. Kind-specific required fields: S needs buy_window+sell_window; V needs trigger+direction+kill_price; C needs legs+relation_id; U needs event+direction+kill_price; H needs eval_window_hours+kill_price. Fields belonging to another archetype are rejected.",
+        "description": "Machine-readable strategy objects, one per shipped strategy — the authoritative copy downstream systems ingest (the markdown Strategies section is the human view; the two must agree). An EMPTY array is valid: ship nothing when nothing clears the bar (the Discarded section carries the evidence). ALL gp/unit fields must be plain integers: no expressions, no commas, no units. Kind-specific required fields: F needs attention + per_cycle_gp >= 200000; B needs attention+kill_price + entry_price >= 10000000; V needs trigger+direction+kill_price; C needs legs+relation_id; U needs event+direction+kill_price. S and H are retired — do not ship them. Fields belonging to another archetype are rejected.",
         "items": {
           "type": "object",
           "properties": {
-            "id": {"type": "string", "description": "<archetype>-<item-slug>-<yyyymmdd>, e.g. S-yew-logs-20260720"},
-            "archetype": {"type": "string", "enum": ["S","V","C","U","H"]},
+            "id": {"type": "string", "description": "<archetype>-<item-slug>-<yyyymmdd>, e.g. F-adamantite-bar-20260720"},
+            "archetype": {"type": "string", "enum": ["F","B","V","C","U"]},
             "title": {"type": "string"},
             "thesis": {"type": "string"},
             "items": {"type": "array", "items": {"type": "object", "properties": {
@@ -48,15 +48,16 @@ var submitReportDef = json.RawMessage(`{
             "exit": {"type": "string", "description": "precise human rule"},
             "entry_price": {"type": "integer", "description": "the buy trigger in gp (plain integer). For C: total input cost per conversion"},
             "exit_price": {"type": "integer", "description": "the sell target in gp (plain integer). For C: post-tax output revenue per conversion"},
-            "kill_price": {"type": ["integer","null"], "description": "price of items[0] beyond which the strategy is dead; null only where the archetype allows (required for V, U, H)"},
-            "horizon": {"type": "string"},
-            "capital_required": {"type": "integer", "description": "gp, plain integer"},
+            "kill_price": {"type": ["integer","null"], "description": "price of items[0] beyond which the strategy is dead; null only where the archetype allows (required for B, V, U)"},
+            "horizon": {"type": "string", "description": "expected hold / cycle time in words (B: the turnaround estimate)"},
+            "attention": {"type": "string", "description": "REQUIRED for F and B: the execution contract — offer cadence, longest safe unattended window, reaction risk. The operator decides what fits their day"},
+            "capital_required": {"type": "integer", "description": "gp, plain integer; must fit the 50M research budget on its own (per-opportunity, not a shared pool)"},
             "size": {"type": "object", "properties": {
               "buy_limit": {"type": "integer"}, "vol_constrained": {"type": "integer"}, "units_used": {"type": "integer"}
             }, "required": ["buy_limit","vol_constrained","units_used"]},
             "expected_value": {"type": "object", "properties": {
-              "per_cycle_gp": {"type": "integer"}, "per_1h_gp": {"type": "integer", "description": "post-tax gp per hour on the archetype's own cycle (S: per_cycle/168; H: per_cycle/horizon hours; C: one 4h buy-limit cycle / 4)"},
-              "per_day_gp": {"type": "integer"}, "roi_pct": {"type": "number"}
+              "per_cycle_gp": {"type": "integer", "description": "post-tax; F: one 4h buy-limit cycle, MUST be >= 200000; B: MUST be >= 100000"}, "per_1h_gp": {"type": "integer", "description": "post-tax gp per hour on the archetype's own cycle (F: per_cycle/4; B: per_cycle/turnaround hours; C: one 4h buy-limit cycle / 4)"},
+              "per_day_gp": {"type": "integer"}, "roi_pct": {"type": "number", "description": "display-only context — ranking is by absolute gp"}
             }, "required": ["per_cycle_gp","per_1h_gp","per_day_gp","roi_pct"]},
             "confidence": {"type": "string", "enum": ["high","medium","low","insufficient_history"]},
             "confidence_why": {"type": "string"},
@@ -85,7 +86,7 @@ var submitReportDef = json.RawMessage(`{
             "event": {"type": ["object","null"], "description": "U ONLY, required for U: the game event this trades (date within ±14 days)", "properties": {
               "date": {"type": "string", "description": "YYYY-MM-DD UTC"}, "description": {"type": "string"}
             }, "required": ["date","description"]},
-            "eval_window_hours": {"type": ["integer","null"], "description": "How long the harness paper-trades before confirm/expire. REQUIRED for H (168-672). Optional elsewhere (defaults: S 168, V 96 from trigger, C 48, U 72); S minimum 168"}
+            "eval_window_hours": {"type": ["integer","null"], "description": "How long the harness paper-trades before confirm/expire. Optional (defaults: F 48, B 96, V 96 from trigger, C 48, U 72)"}
           },
           "required": ["id","archetype","title","thesis","items","entry","exit","entry_price","exit_price","horizon","capital_required","size","expected_value","confidence","invalidation"]
         }

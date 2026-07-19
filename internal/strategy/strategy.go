@@ -4,11 +4,13 @@
 // expressions, comma-formatted strings, and unknown fields are rejected at
 // the gate where the model can fix its own output.
 //
-// Archetypes (2026-07 re-architecture): S seasonal time-window, V
-// volume-anomaly (armed trigger), C conversion arbitrage (multi-leg), U
-// update/event, H swing hold. Each kind has required structured fields the
-// orchestrator's per-kind evaluator interprets; fields belonging to another
-// kind are rejected so the DB rows stay clean.
+// Archetypes (2026-07-18 flips-first redesign): F volume flip, B high-value
+// flip, V volume-anomaly (armed trigger), C conversion arbitrage (multi-leg),
+// U update/event. S (seasonal window) and H (swing hold) are retired as
+// shippable kinds — the letters stay valid so historical sidecars replay, but
+// the directive forbids shipping them. Each kind has required structured
+// fields the orchestrator's per-kind evaluator interprets; fields belonging
+// to another kind are rejected so the DB rows stay clean.
 package strategy
 
 import (
@@ -104,6 +106,7 @@ type Strategy struct {
 	ExitPrice       int64         `json:"exit_price"`
 	KillPrice       *int64        `json:"kill_price"`
 	Horizon         string        `json:"horizon"`
+	Attention       string        `json:"attention,omitempty"` // required for F, B: offer cadence, longest safe unattended window, reaction risk
 	CapitalRequired int64         `json:"capital_required"`
 	Size            Size          `json:"size"`
 	ExpectedValue   ExpectedValue `json:"expected_value"`
@@ -134,10 +137,19 @@ type Sidecar struct {
 }
 
 var (
-	idRe        = regexp.MustCompile(`^[SVCUH]-[a-z0-9-]+-\d{8}$`)
-	archetypes  = map[string]bool{"S": true, "V": true, "C": true, "U": true, "H": true}
+	idRe        = regexp.MustCompile(`^[FBSVCUH]-[a-z0-9-]+-\d{8}$`)
+	archetypes  = map[string]bool{"F": true, "B": true, "S": true, "V": true, "C": true, "U": true, "H": true}
 	confidences = map[string]bool{"high": true, "medium": true, "low": true, "insufficient_history": true}
 	dateRe      = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+)
+
+// Flips-first constants (2026-07-18 redesign). The budget is a per-opportunity
+// sizing scale, not a shared pool; the floors are absolute-gp ship gates.
+const (
+	ResearchBudgetGp = 50_000_000
+	FloorFPerCycleGp = 200_000
+	FloorBPerCycleGp = 100_000
+	MinBEntryPriceGp = 10_000_000
 )
 
 // Parse decodes the raw strategies array strictly (unknown fields and
@@ -197,9 +209,8 @@ func isTypeError(err error, target **json.UnmarshalTypeError) bool {
 // margin × units) is deliberately NOT checked — that is the evaluator's job,
 // and over-gating causes retry loops. now anchors the U event-date check.
 func Validate(list []Strategy, now time.Time) string {
-	if len(list) == 0 {
-		return "strategies: must contain at least 1 strategy"
-	}
+	// An empty list is valid: "nothing clears the bar" is a first-class
+	// outcome — the Discarded section of the report carries the evidence.
 	if len(list) > 10 {
 		return "strategies: at most 10 strategies"
 	}
@@ -209,9 +220,9 @@ func Validate(list []Strategy, now time.Time) string {
 		}
 		switch {
 		case !idRe.MatchString(s.ID):
-			return p("id", `must match ^[SVCUH]-<item-slug>-<yyyymmdd>$ (e.g. "S-yew-logs-20260720")`)
+			return p("id", `must match ^[FBSVCUH]-<item-slug>-<yyyymmdd>$ (e.g. "F-adamantite-bar-20260720")`)
 		case !archetypes[s.Archetype]:
-			return p("archetype", "must be one of S | V | C | U | H")
+			return p("archetype", "must be one of F | B | V | C | U (S and H are retired)")
 		case !strings.HasPrefix(s.ID, s.Archetype+"-"):
 			return p("id", "must start with the strategy's archetype letter")
 		case strings.TrimSpace(s.Title) == "":
@@ -234,6 +245,8 @@ func Validate(list []Strategy, now time.Time) string {
 			return p("horizon", "required")
 		case s.CapitalRequired < 0:
 			return p("capital_required", "must be a non-negative integer (gp)")
+		case s.CapitalRequired > ResearchBudgetGp:
+			return p("capital_required", fmt.Sprintf("must fit the %dgp research budget on its own", ResearchBudgetGp))
 		case s.Size.UnitsUsed <= 0:
 			return p("size.units_used", "must be a positive integer")
 		case !confidences[s.Confidence]:
@@ -276,6 +289,56 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 		return ""
 	}
 	switch s.Archetype {
+	case "F":
+		if s.EntryPrice >= s.ExitPrice {
+			return p("entry_price", "must be below exit_price for archetype F (the buy offer and the sell offer)")
+		}
+		if strings.TrimSpace(s.Attention) == "" {
+			return p("attention", "required for archetype F — offer cadence, longest safe unattended window, reaction risk")
+		}
+		if s.ExpectedValue.PerCycleGp < FloorFPerCycleGp {
+			return p("expected_value.per_cycle_gp", fmt.Sprintf("must be >= %d for archetype F — below the floor does not ship, dismiss it instead", FloorFPerCycleGp))
+		}
+		for _, f := range []string{
+			forbid(s.BuyWindow != nil || s.SellWindow != nil, "buy_window/sell_window", "S"),
+			forbid(s.Trigger != nil, "trigger", "V"),
+			forbid(s.Direction != nil, "direction", "V/U"),
+			forbid(len(s.Legs) > 0, "legs", "C"),
+			forbid(s.RelationID != nil, "relation_id", "C"),
+			forbid(s.Event != nil, "event", "U"),
+		} {
+			if f != "" {
+				return f
+			}
+		}
+	case "B":
+		if s.EntryPrice < MinBEntryPriceGp {
+			return p("entry_price", fmt.Sprintf("must be >= %d for archetype B — high-value flips are the 10M+ tier; cheaper items belong in F or nowhere", MinBEntryPriceGp))
+		}
+		if s.EntryPrice >= s.ExitPrice {
+			return p("entry_price", "must be below exit_price for archetype B (buy offer below sell offer)")
+		}
+		if s.KillPrice == nil {
+			return p("kill_price", "required for archetype B — a big-ticket hold without a stop is capital in a hole")
+		}
+		if strings.TrimSpace(s.Attention) == "" {
+			return p("attention", "required for archetype B — offer cadence, longest safe unattended window, reaction risk")
+		}
+		if s.ExpectedValue.PerCycleGp < FloorBPerCycleGp {
+			return p("expected_value.per_cycle_gp", fmt.Sprintf("must be >= %d for archetype B — below the floor does not ship, dismiss it instead", FloorBPerCycleGp))
+		}
+		for _, f := range []string{
+			forbid(s.BuyWindow != nil || s.SellWindow != nil, "buy_window/sell_window", "S"),
+			forbid(s.Trigger != nil, "trigger", "V"),
+			forbid(s.Direction != nil, "direction", "V/U"),
+			forbid(len(s.Legs) > 0, "legs", "C"),
+			forbid(s.RelationID != nil, "relation_id", "C"),
+			forbid(s.Event != nil, "event", "U"),
+		} {
+			if f != "" {
+				return f
+			}
+		}
 	case "S":
 		if s.BuyWindow == nil || s.SellWindow == nil {
 			return p("buy_window/sell_window", "required for archetype S (UTC hour-of-week ranges, from_how/to_how 0-167 = dow*24+hour, dow 0=Sunday)")

@@ -83,6 +83,34 @@ const validH = `{
   "eval_window_hours": 336
 }`
 
+const validF = `{
+  "id": "F-adamantite-bar-20260714", "archetype": "F",
+  "title": "Adamantite bar volume flip", "thesis": "smiths dump at market, PvM buyers pay up; patient offers collect a persistent spread at full limit",
+  "items": [{"name": "Adamantite bar", "id": 2361, "buy_limit": 11000, "members": false}],
+  "entry": "buy offers at 1912 in the morning window", "exit": "sell offers at 1973 in the evening",
+  "entry_price": 1912, "exit_price": 1973, "kill_price": null,
+  "horizon": "one 4h buy-limit cycle", "attention": "place buys ~08:00, convert to sells ~20:00; safe unattended 12h; stand down if margin < 8gp for 2 days",
+  "capital_required": 21032000,
+  "size": {"buy_limit": 11000, "vol_constrained": 321000, "units_used": 11000},
+  "expected_value": {"per_cycle_gp": 242000, "per_1h_gp": 60500, "per_day_gp": 484000, "roi_pct": 1.2},
+  "confidence": "medium", "confidence_why": "spread present in 71% of 5m blocks over 48h", "evidence": "top_flips + item_history persistence",
+  "invalidation": "post-tax margin below 8gp on two consecutive daily checks", "risks": ["fill_risk", "self_impact"], "paper_trade": "two cycles"
+}`
+
+const validB = `{
+  "id": "B-bandos-chestplate-20260714", "archetype": "B",
+  "title": "Bandos chestplate high-value flip", "thesis": "fresh two-sided 10M+ market with a post-tax margin worth the hold; 21d range-bound",
+  "items": [{"name": "Bandos chestplate", "id": 11832, "buy_limit": 8, "members": true}],
+  "entry": "buy offer at 23012123", "exit": "sell offer at 23596273",
+  "entry_price": 23012123, "exit_price": 23596273, "kill_price": 22000000,
+  "horizon": "1-2 days per flip", "attention": "check twice daily; cancel and reprice if unfilled 24h; hard stop at kill",
+  "capital_required": 46024246,
+  "size": {"buy_limit": 8, "vol_constrained": 287, "units_used": 2},
+  "expected_value": {"per_cycle_gp": 224450, "per_1h_gp": 4676, "per_day_gp": 112225, "roi_pct": 0.49},
+  "confidence": "medium", "confidence_why": "vol24h 1914, both legs < 2min, band position 0.44 over 21d", "evidence": "top_flips min_price=10M + item_history 30d",
+  "invalidation": "daily close breaks below the 21d band floor", "risks": ["price_shift", "fill_risk"], "paper_trade": "three flips"
+}`
+
 var now = time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 
 func parseOne(t *testing.T, fixture string) (map[string]any, func(map[string]any) string) {
@@ -105,7 +133,7 @@ func parseOne(t *testing.T, fixture string) (map[string]any, func(map[string]any
 }
 
 func TestAllKindsValid(t *testing.T) {
-	for name, fixture := range map[string]string{"S": validS, "V": validV, "C": validC, "U": validU, "H": validH} {
+	for name, fixture := range map[string]string{"F": validF, "B": validB, "S": validS, "V": validV, "C": validC, "U": validU, "H": validH} {
 		t.Run(name, func(t *testing.T) {
 			m, rerun := parseOne(t, fixture)
 			if reason := rerun(m); reason != "" {
@@ -214,6 +242,93 @@ func TestSKindRules(t *testing.T) {
 	})
 	t.Run("cross-kind field rejected", func(t *testing.T) {
 		m, rerun := parseOne(t, validS)
+		m["trigger"] = map[string]any{"metric": "volume_zscore", "threshold": 3.0, "direction": "above", "window": "1h"}
+		if reason := rerun(m); !strings.Contains(reason, "only valid for archetype V") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+}
+
+func TestZeroStrategiesAllowed(t *testing.T) {
+	list, reason := Parse(json.RawMessage("[]"))
+	if reason != "" {
+		t.Fatalf("empty strategies must be valid (ship-nothing outcome), got %q", reason)
+	}
+	if len(list) != 0 {
+		t.Fatalf("want empty list, got %d", len(list))
+	}
+}
+
+func TestCapitalOverBudgetRejected(t *testing.T) {
+	m, rerun := parseOne(t, validF)
+	m["capital_required"] = 60_000_000
+	if reason := rerun(m); !strings.Contains(reason, "research budget") {
+		t.Fatalf("got %q", reason)
+	}
+}
+
+func TestFKindRules(t *testing.T) {
+	t.Run("below floor rejected", func(t *testing.T) {
+		m, rerun := parseOne(t, validF)
+		m["expected_value"] = map[string]any{"per_cycle_gp": 150000, "per_1h_gp": 37500, "per_day_gp": 300000, "roi_pct": 1.0}
+		if reason := rerun(m); !strings.Contains(reason, "per_cycle_gp") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("missing attention rejected", func(t *testing.T) {
+		m, rerun := parseOne(t, validF)
+		delete(m, "attention")
+		if reason := rerun(m); !strings.Contains(reason, "attention") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("entry must be below exit", func(t *testing.T) {
+		m, rerun := parseOne(t, validF)
+		m["entry_price"] = 2000
+		if reason := rerun(m); !strings.Contains(reason, "entry_price") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("seasonal windows forbidden", func(t *testing.T) {
+		m, rerun := parseOne(t, validF)
+		m["buy_window"] = map[string]any{"from_how": 50, "to_how": 53}
+		if reason := rerun(m); !strings.Contains(reason, "only valid for archetype S") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+}
+
+func TestBKindRules(t *testing.T) {
+	t.Run("sub-10M entry rejected", func(t *testing.T) {
+		m, rerun := parseOne(t, validB)
+		m["entry_price"] = 9_000_000
+		if reason := rerun(m); !strings.Contains(reason, "10000000") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("missing kill rejected", func(t *testing.T) {
+		m, rerun := parseOne(t, validB)
+		m["kill_price"] = nil
+		if reason := rerun(m); !strings.Contains(reason, "kill_price") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("missing attention rejected", func(t *testing.T) {
+		m, rerun := parseOne(t, validB)
+		m["attention"] = ""
+		if reason := rerun(m); !strings.Contains(reason, "attention") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("below floor rejected", func(t *testing.T) {
+		m, rerun := parseOne(t, validB)
+		m["expected_value"] = map[string]any{"per_cycle_gp": 80000, "per_1h_gp": 1666, "per_day_gp": 40000, "roi_pct": 0.2}
+		if reason := rerun(m); !strings.Contains(reason, "per_cycle_gp") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("trigger forbidden", func(t *testing.T) {
+		m, rerun := parseOne(t, validB)
 		m["trigger"] = map[string]any{"metric": "volume_zscore", "threshold": 3.0, "direction": "above", "window": "1h"}
 		if reason := rerun(m); !strings.Contains(reason, "only valid for archetype V") {
 			t.Fatalf("got %q", reason)
@@ -370,9 +485,14 @@ func TestSignalVerdicts(t *testing.T) {
 	})
 }
 
-func TestEmptyAndTooMany(t *testing.T) {
-	if _, reason := Parse(json.RawMessage(`[]`)); !strings.Contains(reason, "at least 1") {
-		t.Fatalf("empty: %q", reason)
+func TestTooManyRejected(t *testing.T) {
+	many := "[" + validF
+	for i := 0; i < 10; i++ {
+		many += "," + validF
+	}
+	many += "]"
+	if _, reason := Parse(json.RawMessage(many)); !strings.Contains(reason, "at most 10") {
+		t.Fatalf("11 strategies: %q", reason)
 	}
 }
 
