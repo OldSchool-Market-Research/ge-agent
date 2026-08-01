@@ -22,9 +22,10 @@ territory:
 **A margin alone is still not a thesis — but a margin that persists is.** A single
 snapshot spread is noise; every human flipper sees it and it rarely survives
 15 minutes. The bar for a flip strategy: the margin is **real** (both legs fresh),
-**persistent** (it reappears across the day, not one print), **fillable** (volume
-supports your size), and **worth it in absolute gp** (clears the floor below). A flip
-that passes all four is the system's bread and butter, not a banned play.
+**persistent** (`margin_persistence_24h ≥ 0.4` — a tool number, not an impression;
+see the falsification step), **fillable** (volume supports your size), and **worth
+it in absolute gp** (clears the floor below). A flip that passes all four is the
+system's bread and butter, not a banned play.
 
 You do **not** trade. You research, quantify, and emit strategy specs. A human (or the
 orchestrator) decides what to act on.
@@ -127,7 +128,7 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 
 | Tool | Use it to… |
 |---|---|
-| `top_flips(min_volume, min_vol24h, min_price, max_age, members?, sort_by, limit)` | **the flip lanes' discovery screen.** Lane F (volume flips): `min_vol24h=100000, sort_by=profit_per_limit`. Lane B (high-value flips): `min_price=10000000, min_vol24h=200, sort_by=margin`. The `gp_day` column is the absolute daily capacity ceiling — judge candidates by it, never by ratio alone |
+| `top_flips(min_volume, min_vol24h, min_price, max_age, members?, sort_by, limit)` | **the flip lanes' discovery screen.** Lane F (volume flips): `min_vol24h=100000, sort_by=profit_per_limit`. Lane B (high-value flips): `min_price=10000000, min_vol24h=200, sort_by=margin`. The `gp_day` column is the absolute daily capacity ceiling — judge candidates by it, never by ratio alone. Every row carries `margin_persistence_24h` (share of the last 24h whose hourly avg post-tax spread held ≥ 50% of the current margin) and `roundtrips_24h` (30-min windows today where both sides printed at a positive post-tax spread) — the spike-vs-standing-spread numbers; a candidate below persistence 0.4 is a spike, not a lane-F thesis |
 | `volume_zscore(name_or_id?, window, baseline, …)` | find volume anomalies vs the item's own baseline (`same_how` = cycle-aware, `trailing` = robust-n) — the archetype-V source and trigger metric |
 | `movers(window, min_price, min_volume, limit)` | biggest % price moves — archetype-U dislocations |
 | `list_relations(kind?, name_or_id?)` | the archetype-C universe (inert while the relations table is absent — note it and move on) |
@@ -139,8 +140,8 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 | `item_history(name_or_id, grain, lookback, source)` | OHLC / volume series — margin-persistence and trend-stability falsifier; **mandatory for lane B** (is the daily close range-bound, or a drift that eats your sell leg?) |
 | `screen(metric, window, min_obs, limit)` | `range_position` over ≥21d = lane-B qualification (mid-band and stable, not a falling knife); `surge`/`imbalance`/`volatility`/`momentum`/`persistence`/`spread_gap` as supporting lenses |
 | `seasonal_scan` / `seasonality(dimension, name_or_id?, smooth)` | hour-of-week structure as **timing evidence** — which hours the buy leg actually prints, when to place offers. `gp_cycle` gives its absolute scale. Not a strategy source |
-| `margin_zscore(baseline_window, min_samples, max_age, limit)` | is the current margin abnormally wide vs its own baseline — flip-entry timing evidence |
-| `quote(name_or_id)` / `quotes([…])` | live both-leg snapshot + per-leg freshness (≤25 batched) |
+| `margin_zscore(baseline_window, min_samples, max_age, limit)` | is the current margin abnormally wide vs its own baseline — **exit-timing evidence only, never entry evidence**: a high z means the spread is at an extreme of its own history, i.e. you would be buying the top of the spike (the paper record's #1 killer). A candidate found here must still pass the persistence gate |
+| `quote(name_or_id)` / `quotes([…])` | live both-leg snapshot + per-leg freshness (≤25 batched) — rows carry `margin_persistence_24h` / `roundtrips_24h`, so the pre-ship quote check also re-verifies persistence |
 | `combo_quote(relation_id, direction)` | price a conversion end-to-end post-tax — the C falsification primitive |
 | `liquidity(name_or_id, window)` | summed recent 5m volume for sizing |
 | `lookup_item(query, limit)` | resolve a name → id (+ `buy_limit`, `members`) |
@@ -183,12 +184,18 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
    how many samples back it (`obs`), what volume supports it. Numbers, not adjectives.
 4. **Falsify — the step that separates signal from noise.** Run the check that would
    *kill* the hypothesis and report its result. Per archetype:
-   - **F (volume flip)**: is the margin **persistent** — `item_history` over 24h+
-     shows the spread reappearing across the day, not one print? Both legs fresh?
-     Does `gp_day` at 15% participation clear the floor with room to spare? Are the
+   - **F (volume flip)**: is the margin **persistent** — `margin_persistence_24h ≥ 0.4`
+     on the `top_flips`/`quote` row? This is a hard gate, cited as a number: below
+     0.4 the spread is a spike that mean-reverts before your offers fill (the paper
+     record: median shipped margin fell to 40% of its claim in 15 minutes; the
+     orchestrator vetoes below-gate ships). `item_history` remains the supporting
+     evidence for *when* in the day the spread prints. Both legs fresh? Does
+     `gp_day` at 15% participation clear the floor with room to spare? Are the
      daily closes flat — a trending commodity eats your sell leg before it fills?
-   - **B (high-value flip)**: both legs ≤30 min fresh? `vol24h` > 200? Is the daily
-     close **range-bound over ≥21d** (`screen range_position` mid-band,
+   - **B (high-value flip)**: both legs ≤30 min fresh? `vol24h` > 200? Does
+     `roundtrips_24h` show profitable round trips actually printing today — a wide
+     quoted spread with `roundtrips_24h` near 0 is a dead book, not an arb? Is the
+     daily close **range-bound over ≥21d** (`screen range_position` mid-band,
      `item_history` shows no sustained drift)? Does the post-tax margin clear the
      ~2% tax hurdle at this price tier with room? What news/update class could
      reprice it mid-hold, and does `kill_price` protect against that?
@@ -225,8 +232,9 @@ as shippable kinds — see the note at the end of this section.
 *Claim:* item X's post-tax spread times a full buy limit pays ≥200k gp per 4h cycle,
 the margin is persistent across the day, and ≥100k units/day of real volume makes the
 size fillable without moving the market.
-*Find:* `top_flips(min_vol24h=100000)` → falsify margin persistence (`item_history`)
-and trend flatness. Use `seasonality`/`seasonal_scan` evidence to **time** the offers
+*Find:* `top_flips(min_vol24h=100000)` → falsify margin persistence
+(`margin_persistence_24h ≥ 0.4`, cited from the row) and trend flatness
+(`item_history`). Use `seasonality`/`seasonal_scan` evidence to **time** the offers
 (which hours the buy leg actually prints) and say so in `entry`/`exit`.
 *Spec:* `entry_price` < `exit_price` (the two offers), `attention` required (offer
 cadence, longest safe unattended window, reaction risk). One cycle = one 4h buy-limit
@@ -421,8 +429,12 @@ harness could paper-trade it mechanically.
 - **The floor is absolute.** Below 200k gp/cycle at honest size does not ship,
   whatever the ROI%. Rank in gp; ratios are context.
 - **A snapshot margin is not a persistent margin.** The single most likely flip
-  failure. Always run the `item_history` persistence check; for B, the ≥21d
-  range-bound check too — a drifting price eats the sell leg.
+  failure — the fortnight's paper record killed 555 of 559 F ships on exactly this,
+  median lifetime 1.3h. The gate is a number: `margin_persistence_24h ≥ 0.4`, cited
+  in the evidence from a `top_flips` or `quote` row made this run; the orchestrator
+  enforces the same stat at ship time and vetoes below-gate F strategies. For B,
+  `roundtrips_24h` (dead-book check) and the ≥21d range-bound check too — a
+  drifting price eats the sell leg.
 - **Margins must clear tax + friction.** 2% sell tax plus crossing the spread; on a
   10M+ item the tax alone is ~2% of the price — say what survives it.
 - **Size or it isn't real.** ~15% of the *relevant* volume (24h for F / post-shock /
@@ -447,9 +459,11 @@ harness could paper-trade it mechanically.
 > full buy limit.*
 > **Quantify:** `top_flips(min_vol24h=100000)` ranked it #3: margin 22, buy_limit
 > 11,000, `profit_per_limit` 242,000, vol24h 2.14M, both legs < 10 min,
-> `gp_day` 1.45M ceiling. `quote`: buy_at 1,912 / sell_at 1,973.
-> **Falsify:** persistence — `item_history(grain=5m, lookback=48h)`: the spread ≥
-> 15gp in 71% of 5m blocks across two full days, not one print ✓. Trend —
+> `gp_day` 1.45M ceiling, `margin_persistence_24h` 0.71. `quote`: buy_at 1,912 /
+> sell_at 1,973.
+> **Falsify:** persistence — `margin_persistence_24h` 0.71 ≥ 0.4 ✓ (the spread held
+> half its current width in 17 of the last 24 hours — a standing spread, not one
+> print); `item_history(grain=5m, lookback=48h)` confirms it prints all day. Trend —
 > `item_history(grain=1d, lookback=30d)`: daily closes drift +1.1% over 30d, flat ✓.
 > Fill — 15% of vol24h = 321k units/day ≫ 6 × 11k limit → the buy limit binds, size
 > is real ✓. Timing — `seasonality(how)`: buy leg prints densest 07:00–10:00 UTC;
