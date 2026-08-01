@@ -75,7 +75,7 @@ fill it, it isn't profit. And remember the harness paper-trades you **with a
 self-impact haircut** (≈15% volume participation, 0.5% slippage per side) — a strategy
 that only works at 100% of observed volume at exact observed prices is fantasy.
 
-**The floor is absolute: a strategy must clear ≥200,000 gp per cycle at honest size,
+**The floor is absolute: a strategy must clear ≥400,000 gp per cycle (100k gp/hr) at honest size,
 or it does not ship.** Dismiss below-floor candidates no matter how pretty the ratio.
 ROI%, amplitude% and margin% are display-only context — a 300% ROI on 400gp of
 capital is noise; a 1% edge that fills 20M is a business. Rank in gp, always.
@@ -215,7 +215,7 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
    always.
 6. **Spec.** Emit the strategy object with the kind-specific structured fields
    (schema below) — the harness paper-trades exactly what you write there.
-7. **Rank.** Order by absolute post-tax gp/day. Dismiss anything below the 200k
+7. **Rank.** Order by absolute post-tax gp/day. Dismiss anything below the 400k
    gp/cycle floor regardless of its ratios. Confidence must be *earned by evidence*
    (sample size + lookback covered), not asserted.
 
@@ -229,7 +229,7 @@ are **F, B, V, U** (and C when the relations table exists). **S and H are retire
 as shippable kinds — see the note at the end of this section.
 
 ### F — Volume flip *(the flagship)*
-*Claim:* item X's post-tax spread times a full buy limit pays ≥200k gp per 4h cycle,
+*Claim:* item X's post-tax spread times a full buy limit pays ≥400k gp per 4h cycle,
 the margin is persistent across the day, and ≥100k units/day of real volume makes the
 size fillable without moving the market.
 *Find:* `top_flips(min_vol24h=100000)` → falsify margin persistence
@@ -238,7 +238,7 @@ size fillable without moving the market.
 (which hours the buy leg actually prints) and say so in `entry`/`exit`.
 *Spec:* `entry_price` < `exit_price` (the two offers), `attention` required (offer
 cadence, longest safe unattended window, reaction risk). One cycle = one 4h buy-limit
-window: `per_1h_gp = per_cycle_gp / 4`. `per_cycle_gp` must be ≥ 200,000 — the
+window: `per_1h_gp = per_cycle_gp / 4`. `per_cycle_gp` must be ≥ 400,000 — the
 validator rejects below-floor F strategies.
 
 ### B — High-value flip
@@ -377,7 +377,7 @@ harness could paper-trade it mechanically.
     vol_constrained:<units fillable at ~15% share of the RELEVANT volume>
     units_used:     <min of the two>
   expected_value:
-    per_cycle_gp:   <post-tax; F: one 4h buy-limit cycle, MUST be ≥ 200,000>
+    per_cycle_gp:   <post-tax; F: one 4h buy-limit cycle, MUST be ≥ 400,000>
     per_1h_gp:      <post-tax; F: per_cycle/4, B: per_cycle/turnaround hours>
     per_day_gp:     <post-tax>
     roi_pct:        <per-cycle return on capital_required — display-only context>
@@ -426,7 +426,7 @@ harness could paper-trade it mechanically.
   fix and resubmit.
 - **Falsify, don't confirm.** Default to looking for the reason a pattern is noise. A
   strategy you couldn't kill is worth more than ten you only cheerled.
-- **The floor is absolute.** Below 200k gp/cycle at honest size does not ship,
+- **The floor is absolute.** Below 400k gp/cycle at honest size does not ship,
   whatever the ROI%. Rank in gp; ratios are context.
 - **A snapshot margin is not a persistent margin.** The single most likely flip
   failure — the fortnight's paper record killed 555 of 559 F ships on exactly this,
@@ -453,27 +453,27 @@ harness could paper-trade it mechanically.
 
 ## What good looks like (one worked mini-example)
 
-> **Hypothesis (archetype F):** *Adamantite bar sustains a ~22gp post-tax spread on
+> **Hypothesis (archetype F):** *Adamantite bar sustains a ~40gp post-tax spread on
 > ~2.1M units/day of volume because smiths dump at market and PvM buyers pay up —
 > neither side places patient offers, so a patient flipper collects the spread at
 > full buy limit.*
-> **Quantify:** `top_flips(min_vol24h=100000)` ranked it #3: margin 22, buy_limit
-> 11,000, `profit_per_limit` 242,000, vol24h 2.14M, both legs < 10 min,
-> `gp_day` 1.45M ceiling, `margin_persistence_24h` 0.71. `quote`: buy_at 1,912 /
-> sell_at 1,973.
+> **Quantify:** `top_flips(min_vol24h=100000)` ranked it #3: margin 40, buy_limit
+> 11,000, `profit_per_limit` 440,000, vol24h 2.14M, both legs < 10 min,
+> `gp_day` 2.64M ceiling, `margin_persistence_24h` 0.71. `quote`: buy_at 1,908 /
+> sell_at 1,987.
 > **Falsify:** persistence — `margin_persistence_24h` 0.71 ≥ 0.4 ✓ (the spread held
-> half its current width in 17 of the last 24 hours — a standing spread, not one
-> print); `item_history(grain=5m, lookback=48h)` confirms it prints all day. Trend —
+> half its current width — 20gp — in 17 of the last 24 hours: a standing spread, not
+> one print); `item_history(grain=5m, lookback=48h)` confirms it prints all day. Trend —
 > `item_history(grain=1d, lookback=30d)`: daily closes drift +1.1% over 30d, flat ✓.
 > Fill — 15% of vol24h = 321k units/day ≫ 6 × 11k limit → the buy limit binds, size
 > is real ✓. Timing — `seasonality(how)`: buy leg prints densest 07:00–10:00 UTC;
 > place buys in the morning window.
-> **Size:** 11,000 × 22 = 242k gp/cycle (≥ 200k floor ✓); capital 21.0M ≤ budget ✓;
-> two worked cycles/day ≈ 480k gp/day.
-> **Spec:** entry 1,912, exit 1,973, per_1h 60,500, attention: "place buys ~08:00,
-> convert fills to sells ~20:00; safe unattended 12h; if margin < 8gp for 2 days,
+> **Size:** 11,000 × 40 = 440k gp/cycle (≥ 400k floor ✓); capital 21.0M ≤ budget ✓;
+> two worked cycles/day ≈ 880k gp/day.
+> **Spec:** entry 1,908, exit 1,987, per_1h 110,000, attention: "place buys ~08:00,
+> convert fills to sells ~20:00; safe unattended 12h; if margin < 15gp for 2 days,
 > stand down."
-> **Invalidation:** post-tax margin below 8gp on two consecutive daily checks.
+> **Invalidation:** post-tax margin below 15gp on two consecutive daily checks.
 
 That's the bar: a claim with a mechanism, numbers from the tools, persistence and
 trend confounds explicitly killed, an absolute-gp size that clears the floor, and an

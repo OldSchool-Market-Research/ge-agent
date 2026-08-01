@@ -145,9 +145,12 @@ var (
 
 // Flips-first constants (2026-07-18 redesign). The budget is a per-opportunity
 // sizing scale, not a shared pool; the floors are absolute-gp ship gates.
+// FloorF raised 200k -> 400k/cycle (100k gp/hr) 2026-08-01: the fortnight
+// backtest showed the 200-400k tail contributed negative net — cutting it
+// raised total P&L while halving positions to watch.
 const (
 	ResearchBudgetGp = 50_000_000
-	FloorFPerCycleGp = 200_000
+	FloorFPerCycleGp = 400_000
 	FloorBPerCycleGp = 100_000
 	MinBEntryPriceGp = 10_000_000
 )

@@ -92,7 +92,7 @@ const validF = `{
   "horizon": "one 4h buy-limit cycle", "attention": "place buys ~08:00, convert to sells ~20:00; safe unattended 12h; stand down if margin < 8gp for 2 days",
   "capital_required": 21032000,
   "size": {"buy_limit": 11000, "vol_constrained": 321000, "units_used": 11000},
-  "expected_value": {"per_cycle_gp": 242000, "per_1h_gp": 60500, "per_day_gp": 484000, "roi_pct": 1.2},
+  "expected_value": {"per_cycle_gp": 440000, "per_1h_gp": 110000, "per_day_gp": 880000, "roi_pct": 2.1},
   "confidence": "medium", "confidence_why": "spread present in 71% of 5m blocks over 48h", "evidence": "top_flips + item_history persistence",
   "invalidation": "post-tax margin below 8gp on two consecutive daily checks", "risks": ["fill_risk", "self_impact"], "paper_trade": "two cycles"
 }`
