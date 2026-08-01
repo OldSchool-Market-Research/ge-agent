@@ -32,7 +32,7 @@ var submitReportDef = json.RawMessage(`{
       "markdown": {"type": "string", "description": "The complete report markdown, all five sections in order"},
       "strategies": {
         "type": "array",
-        "description": "Machine-readable strategy objects, one per shipped strategy — the authoritative copy downstream systems ingest (the markdown Strategies section is the human view; the two must agree). An EMPTY array is valid: ship nothing when nothing clears the bar (the Discarded section carries the evidence). ALL gp/unit fields must be plain integers: no expressions, no commas, no units. Kind-specific required fields: F needs attention + per_cycle_gp >= 200000; B needs attention+kill_price + entry_price >= 10000000; V needs trigger+direction+kill_price; C needs legs+relation_id; U needs event+direction+kill_price. S and H are retired — do not ship them. Fields belonging to another archetype are rejected.",
+        "description": "Machine-readable strategy objects, one per shipped strategy — the authoritative copy downstream systems ingest (the markdown Strategies section is the human view; the two must agree). An EMPTY array is valid: ship nothing when nothing clears the bar (the Discarded section carries the evidence). ALL gp/unit fields must be plain integers: no expressions, no commas, no units. Kind-specific required fields: F needs attention + per_cycle_gp >= 400000; B needs attention+kill_price + entry_price >= 10000000; V needs trigger+direction+kill_price; C needs legs+relation_id; U needs event+direction+kill_price. S and H are retired — do not ship them. Fields belonging to another archetype are rejected.",
         "items": {
           "type": "object",
           "properties": {
@@ -56,7 +56,7 @@ var submitReportDef = json.RawMessage(`{
               "buy_limit": {"type": "integer"}, "vol_constrained": {"type": "integer"}, "units_used": {"type": "integer"}
             }, "required": ["buy_limit","vol_constrained","units_used"]},
             "expected_value": {"type": "object", "properties": {
-              "per_cycle_gp": {"type": "integer", "description": "post-tax; F: one 4h buy-limit cycle, MUST be >= 200000; B: MUST be >= 100000"}, "per_1h_gp": {"type": "integer", "description": "post-tax gp per hour on the archetype's own cycle (F: per_cycle/4; B: per_cycle/turnaround hours; C: one 4h buy-limit cycle / 4)"},
+              "per_cycle_gp": {"type": "integer", "description": "post-tax; F: one 4h buy-limit cycle, MUST be >= 400000; B: MUST be >= 100000"}, "per_1h_gp": {"type": "integer", "description": "post-tax gp per hour on the archetype's own cycle (F: per_cycle/4; B: per_cycle/turnaround hours; C: one 4h buy-limit cycle / 4)"},
               "per_day_gp": {"type": "integer"}, "roi_pct": {"type": "number", "description": "display-only context — ranking is by absolute gp"}
             }, "required": ["per_cycle_gp","per_1h_gp","per_day_gp","roi_pct"]},
             "confidence": {"type": "string", "enum": ["high","medium","low","insufficient_history"]},
