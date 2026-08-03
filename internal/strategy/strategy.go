@@ -104,28 +104,28 @@ type SignalVerdict struct {
 }
 
 type Strategy struct {
-	ID              string        `json:"id"`
-	Archetype       string        `json:"archetype"`
-	Title           string        `json:"title"`
-	Thesis          string        `json:"thesis"`
-	Items           []Item        `json:"items"`
-	Entry           string        `json:"entry"`
-	Exit            string        `json:"exit"`
-	EntryPrice      int64         `json:"entry_price"`
-	ExitPrice       int64         `json:"exit_price"`
-	KillPrice       *int64        `json:"kill_price"`
-	Horizon         string        `json:"horizon"`
-	Attention       string        `json:"attention,omitempty"`      // required for F, B: offer cadence, longest safe unattended window, reaction risk
+	ID              string         `json:"id"`
+	Archetype       string         `json:"archetype"`
+	Title           string         `json:"title"`
+	Thesis          string         `json:"thesis"`
+	Items           []Item         `json:"items"`
+	Entry           string         `json:"entry"`
+	Exit            string         `json:"exit"`
+	EntryPrice      int64          `json:"entry_price"`
+	ExitPrice       int64          `json:"exit_price"`
+	KillPrice       *int64         `json:"kill_price"`
+	Horizon         string         `json:"horizon"`
+	Attention       string         `json:"attention,omitempty"`      // required for F, B: offer cadence, longest safe unattended window, reaction risk
 	AttentionSpec   *AttentionSpec `json:"attention_spec,omitempty"` // required for F, B: the attention contract as numbers
-	CapitalRequired int64         `json:"capital_required"`
-	Size            Size          `json:"size"`
-	ExpectedValue   ExpectedValue `json:"expected_value"`
-	Confidence      string        `json:"confidence"`
-	ConfidenceWhy   string        `json:"confidence_why"`
-	Evidence        string        `json:"evidence"`
-	Invalidation    string        `json:"invalidation"`
-	Risks           []string      `json:"risks"`
-	PaperTrade      string        `json:"paper_trade"`
+	CapitalRequired int64          `json:"capital_required"`
+	Size            Size           `json:"size"`
+	ExpectedValue   ExpectedValue  `json:"expected_value"`
+	Confidence      string         `json:"confidence"`
+	ConfidenceWhy   string         `json:"confidence_why"`
+	Evidence        string         `json:"evidence"`
+	Invalidation    string         `json:"invalidation"`
+	Risks           []string       `json:"risks"`
+	PaperTrade      string         `json:"paper_trade"`
 
 	// Kind-specific structured fields (see Validate for the matrix).
 	BuyWindow       *HourWindow `json:"buy_window,omitempty"`        // S
