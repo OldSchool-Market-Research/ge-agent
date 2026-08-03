@@ -85,6 +85,15 @@ type Event struct {
 	Description string `json:"description"`
 }
 
+// AttentionSpec is the F/B attention contract as numbers, so downstream
+// consumers (the orchestrator's operator ping, the dashboard) can gate on it
+// without parsing prose. It must agree with the attention field; the prose
+// remains the authoritative execution contract.
+type AttentionSpec struct {
+	ChecksPerHour      float64 `json:"checks_per_hour"`      // GE visits per hour while running; fractional = less than hourly
+	MaxUnattendedHours float64 `json:"max_unattended_hours"` // longest safe unattended window
+}
+
 // SignalVerdict is the run's verdict on one assigned signal from the brief's
 // work queue: every assigned signal must be either shipped (a strategy
 // references it) or dismissed with the reason it failed falsification.
@@ -106,7 +115,8 @@ type Strategy struct {
 	ExitPrice       int64         `json:"exit_price"`
 	KillPrice       *int64        `json:"kill_price"`
 	Horizon         string        `json:"horizon"`
-	Attention       string        `json:"attention,omitempty"` // required for F, B: offer cadence, longest safe unattended window, reaction risk
+	Attention       string        `json:"attention,omitempty"`      // required for F, B: offer cadence, longest safe unattended window, reaction risk
+	AttentionSpec   *AttentionSpec `json:"attention_spec,omitempty"` // required for F, B: the attention contract as numbers
 	CapitalRequired int64         `json:"capital_required"`
 	Size            Size          `json:"size"`
 	ExpectedValue   ExpectedValue `json:"expected_value"`
@@ -281,6 +291,22 @@ func Validate(list []Strategy, now time.Time) string {
 	return ""
 }
 
+// validateAttentionSpec gates the F/B structured attention contract. The
+// bounds are human bounds: more than 12 GE visits an hour is not a strategy a
+// person follows, and "unattended" past a week is a hold, not a flip.
+func validateAttentionSpec(s Strategy, p func(string, string) string) string {
+	if s.AttentionSpec == nil {
+		return p("attention_spec", "required for archetype "+s.Archetype+" — checks_per_hour and max_unattended_hours as numbers, agreeing with the attention prose")
+	}
+	if s.AttentionSpec.ChecksPerHour <= 0 || s.AttentionSpec.ChecksPerHour > 12 {
+		return p("attention_spec.checks_per_hour", "must be > 0 and <= 12 (fractional means less than hourly, e.g. 0.25 = one check every 4h)")
+	}
+	if s.AttentionSpec.MaxUnattendedHours <= 0 || s.AttentionSpec.MaxUnattendedHours > 168 {
+		return p("attention_spec.max_unattended_hours", "must be > 0 and <= 168 hours")
+	}
+	return ""
+}
+
 func validateKind(i int, s Strategy, now time.Time, p func(string, string) string) string {
 	// Reject fields that belong to a different kind — the orchestrator's
 	// per-kind evaluator would silently ignore them, which hides model
@@ -298,6 +324,9 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 		}
 		if strings.TrimSpace(s.Attention) == "" {
 			return p("attention", "required for archetype F — offer cadence, longest safe unattended window, reaction risk")
+		}
+		if reason := validateAttentionSpec(s, p); reason != "" {
+			return reason
 		}
 		if s.ExpectedValue.PerCycleGp < FloorFPerCycleGp {
 			return p("expected_value.per_cycle_gp", fmt.Sprintf("must be >= %d for archetype F — below the floor does not ship, dismiss it instead", FloorFPerCycleGp))
@@ -326,6 +355,9 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 		}
 		if strings.TrimSpace(s.Attention) == "" {
 			return p("attention", "required for archetype B — offer cadence, longest safe unattended window, reaction risk")
+		}
+		if reason := validateAttentionSpec(s, p); reason != "" {
+			return reason
 		}
 		if s.ExpectedValue.PerCycleGp < FloorBPerCycleGp {
 			return p("expected_value.per_cycle_gp", fmt.Sprintf("must be >= %d for archetype B — below the floor does not ship, dismiss it instead", FloorBPerCycleGp))
@@ -361,6 +393,7 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 			return p("eval_window_hours", "must be >= 168 for archetype S (at least one full weekly cycle)")
 		}
 		for _, f := range []string{
+			forbid(s.AttentionSpec != nil, "attention_spec", "F/B"),
 			forbid(s.Trigger != nil, "trigger", "V"),
 			forbid(s.Direction != nil, "direction", "V/U"),
 			forbid(len(s.Legs) > 0, "legs", "C"),
@@ -394,6 +427,7 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 			return p("kill_price", "required for archetype V — a triggered anomaly trade without a stop is a prayer")
 		}
 		for _, f := range []string{
+			forbid(s.AttentionSpec != nil, "attention_spec", "F/B"),
 			forbid(s.BuyWindow != nil || s.SellWindow != nil, "buy_window/sell_window", "S"),
 			forbid(len(s.Legs) > 0, "legs", "C"),
 			forbid(s.RelationID != nil, "relation_id", "C"),
@@ -447,6 +481,7 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 			return p("entry_price", "must be below exit_price for archetype C (entry_price = input cost per conversion, exit_price = post-tax output revenue)")
 		}
 		for _, f := range []string{
+			forbid(s.AttentionSpec != nil, "attention_spec", "F/B"),
 			forbid(s.BuyWindow != nil || s.SellWindow != nil, "buy_window/sell_window", "S"),
 			forbid(s.Trigger != nil, "trigger", "V"),
 			forbid(s.Direction != nil, "direction", "V/U"),
@@ -480,6 +515,7 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 			return p("kill_price", "required for archetype U")
 		}
 		for _, f := range []string{
+			forbid(s.AttentionSpec != nil, "attention_spec", "F/B"),
 			forbid(s.BuyWindow != nil || s.SellWindow != nil, "buy_window/sell_window", "S"),
 			forbid(s.Trigger != nil, "trigger", "V"),
 			forbid(len(s.Legs) > 0, "legs", "C"),
@@ -503,6 +539,7 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 			return p("entry_price", "must be below exit_price for archetype H (buy below the band, sell on reversion)")
 		}
 		for _, f := range []string{
+			forbid(s.AttentionSpec != nil, "attention_spec", "F/B"),
 			forbid(s.BuyWindow != nil || s.SellWindow != nil, "buy_window/sell_window", "S"),
 			forbid(s.Trigger != nil, "trigger", "V"),
 			forbid(s.Direction != nil, "direction", "V/U"),

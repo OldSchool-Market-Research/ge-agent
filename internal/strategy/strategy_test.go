@@ -90,6 +90,7 @@ const validF = `{
   "entry": "buy offers at 1912 in the morning window", "exit": "sell offers at 1973 in the evening",
   "entry_price": 1912, "exit_price": 1973, "kill_price": null,
   "horizon": "one 4h buy-limit cycle", "attention": "place buys ~08:00, convert to sells ~20:00; safe unattended 12h; stand down if margin < 8gp for 2 days",
+  "attention_spec": {"checks_per_hour": 0.5, "max_unattended_hours": 12},
   "capital_required": 21032000,
   "size": {"buy_limit": 11000, "vol_constrained": 321000, "units_used": 11000},
   "expected_value": {"per_cycle_gp": 440000, "per_1h_gp": 110000, "per_day_gp": 880000, "roi_pct": 2.1},
@@ -104,6 +105,7 @@ const validB = `{
   "entry": "buy offer at 23012123", "exit": "sell offer at 23596273",
   "entry_price": 23012123, "exit_price": 23596273, "kill_price": 22000000,
   "horizon": "1-2 days per flip", "attention": "check twice daily; cancel and reprice if unfilled 24h; hard stop at kill",
+  "attention_spec": {"checks_per_hour": 0.1, "max_unattended_hours": 24},
   "capital_required": 46024246,
   "size": {"buy_limit": 8, "vol_constrained": 287, "units_used": 2},
   "expected_value": {"per_cycle_gp": 224450, "per_1h_gp": 4676, "per_day_gp": 112225, "roi_pct": 0.49},
@@ -186,6 +188,53 @@ func TestUnknownFieldRejected(t *testing.T) {
 	if reason == "" {
 		t.Fatal("unknown field should be rejected")
 	}
+}
+
+func TestAttentionSpecRules(t *testing.T) {
+	t.Run("missing on F", func(t *testing.T) {
+		m, rerun := parseOne(t, validF)
+		delete(m, "attention_spec")
+		if reason := rerun(m); !strings.Contains(reason, "attention_spec") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("missing on B", func(t *testing.T) {
+		m, rerun := parseOne(t, validB)
+		delete(m, "attention_spec")
+		if reason := rerun(m); !strings.Contains(reason, "attention_spec") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("zero checks_per_hour", func(t *testing.T) {
+		m, rerun := parseOne(t, validF)
+		m["attention_spec"] = map[string]any{"checks_per_hour": 0, "max_unattended_hours": 12}
+		if reason := rerun(m); !strings.Contains(reason, "checks_per_hour") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("superhuman cadence rejected", func(t *testing.T) {
+		m, rerun := parseOne(t, validF)
+		m["attention_spec"] = map[string]any{"checks_per_hour": 30, "max_unattended_hours": 1}
+		if reason := rerun(m); !strings.Contains(reason, "checks_per_hour") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("unattended window over a week rejected", func(t *testing.T) {
+		m, rerun := parseOne(t, validB)
+		m["attention_spec"] = map[string]any{"checks_per_hour": 0.1, "max_unattended_hours": 200}
+		if reason := rerun(m); !strings.Contains(reason, "max_unattended_hours") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("forbidden on other kinds", func(t *testing.T) {
+		for name, fixture := range map[string]string{"S": validS, "V": validV, "C": validC, "U": validU, "H": validH} {
+			m, rerun := parseOne(t, fixture)
+			m["attention_spec"] = map[string]any{"checks_per_hour": 0.5, "max_unattended_hours": 12}
+			if reason := rerun(m); !strings.Contains(reason, "only valid for archetype F/B") {
+				t.Fatalf("%s: got %q", name, reason)
+			}
+		}
+	})
 }
 
 func TestSKindRules(t *testing.T) {
