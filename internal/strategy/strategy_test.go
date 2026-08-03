@@ -45,6 +45,8 @@ const validC = `{
   "entry": "buy 4x 3-dose at 6900", "exit": "sell 3x 4-dose at 9500",
   "entry_price": 27600, "exit_price": 27930, "kill_price": null,
   "horizon": "minutes per conversion", "capital_required": 13800000,
+  "attention": "batch whenever convenient: place buys, decant at a bank (~2 min), relist; safe unattended indefinitely between batches",
+  "attention_spec": {"checks_per_hour": 1, "max_unattended_hours": 24},
   "size": {"buy_limit": 500, "vol_constrained": 200, "units_used": 200},
   "expected_value": {"per_cycle_gp": 66000, "per_1h_gp": 16500, "per_day_gp": 396000, "roi_pct": 1.2},
   "confidence": "high", "confidence_why": "both legs fresh, deep volume", "evidence": "combo_quote relation 1",
@@ -226,8 +228,15 @@ func TestAttentionSpecRules(t *testing.T) {
 			t.Fatalf("got %q", reason)
 		}
 	})
+	t.Run("missing on C", func(t *testing.T) {
+		m, rerun := parseOne(t, validC)
+		delete(m, "attention_spec")
+		if reason := rerun(m); !strings.Contains(reason, "attention_spec") {
+			t.Fatalf("got %q", reason)
+		}
+	})
 	t.Run("forbidden on other kinds", func(t *testing.T) {
-		for name, fixture := range map[string]string{"S": validS, "V": validV, "C": validC, "U": validU, "H": validH} {
+		for name, fixture := range map[string]string{"S": validS, "V": validV, "U": validU, "H": validH} {
 			m, rerun := parseOne(t, fixture)
 			m["attention_spec"] = map[string]any{"checks_per_hour": 0.5, "max_unattended_hours": 12}
 			if reason := rerun(m); !strings.Contains(reason, "only valid for archetype F/B") {

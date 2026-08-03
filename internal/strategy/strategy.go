@@ -115,8 +115,8 @@ type Strategy struct {
 	ExitPrice       int64          `json:"exit_price"`
 	KillPrice       *int64         `json:"kill_price"`
 	Horizon         string         `json:"horizon"`
-	Attention       string         `json:"attention,omitempty"`      // required for F, B: offer cadence, longest safe unattended window, reaction risk
-	AttentionSpec   *AttentionSpec `json:"attention_spec,omitempty"` // required for F, B: the attention contract as numbers
+	Attention       string         `json:"attention,omitempty"`      // required for F, B, C: offer cadence, longest safe unattended window, reaction risk
+	AttentionSpec   *AttentionSpec `json:"attention_spec,omitempty"` // required for F, B, C: the attention contract as numbers
 	CapitalRequired int64          `json:"capital_required"`
 	Size            Size           `json:"size"`
 	ExpectedValue   ExpectedValue  `json:"expected_value"`
@@ -480,8 +480,13 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 		if s.EntryPrice >= s.ExitPrice {
 			return p("entry_price", "must be below exit_price for archetype C (entry_price = input cost per conversion, exit_price = post-tax output revenue)")
 		}
+		if strings.TrimSpace(s.Attention) == "" {
+			return p("attention", "required for archetype C — batch cadence (offers + conversion time), longest safe unattended window, reaction risk")
+		}
+		if reason := validateAttentionSpec(s, p); reason != "" {
+			return reason
+		}
 		for _, f := range []string{
-			forbid(s.AttentionSpec != nil, "attention_spec", "F/B"),
 			forbid(s.BuyWindow != nil || s.SellWindow != nil, "buy_window/sell_window", "S"),
 			forbid(s.Trigger != nil, "trigger", "V"),
 			forbid(s.Direction != nil, "direction", "V/U"),

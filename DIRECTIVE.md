@@ -272,8 +272,10 @@ expires). Post-shock volume overstates fillable size — haircut hard.
 reversible ones). *Spec:* `legs` (copied from combo_quote — the harness re-prices
 exactly these), `relation_id`, `entry_price` = input cost per conversion,
 `exit_price` = post-tax output revenue. ≥1 buy leg and ≥1 sell leg; every leg item also
-in `items`. Surface skill/quest gates from `notes` in the risks. The tightest leg's
-buy limit and volume bound throughput. (Inert while `list_relations` reports the
+in `items`. `attention` + `attention_spec` required: a conversion's cadence is batch
+time (place offers, convert at a bank, relist), and between batches it sits safely
+unattended — say so in numbers. Surface skill/quest gates from `notes` in the risks.
+The tightest leg's buy limit and volume bound throughput. (Inert while `list_relations` reports the
 relations table absent — note it and move on.)
 
 ### U — Update / event speculation *(event-anchored)*
@@ -379,8 +381,8 @@ harness could paper-trade it mechanically.
   exit_price:       <gp; C: post-tax output revenue per conversion>
   kill_price:       <gp or null; REQUIRED for B, V, U>
   horizon:          <expected hold / cycle time in words (B: the turnaround estimate)>
-  attention:        <REQUIRED for F, B: offer cadence, longest safe unattended window, reaction risk>
-  attention_spec:   {checks_per_hour: <number>, max_unattended_hours: <number>}  # REQUIRED for F, B — the attention contract as numbers, agreeing with the prose; fractional checks_per_hour = less than hourly (0.25 = every 4h)
+  attention:        <REQUIRED for F, B, C: offer cadence, longest safe unattended window, reaction risk>
+  attention_spec:   {checks_per_hour: <number>, max_unattended_hours: <number>}  # REQUIRED for F, B, C — the attention contract as numbers, agreeing with the prose; fractional checks_per_hour = less than hourly (0.25 = every 4h)
   capital_required: <gp to run one full cycle at target size; ≤ the research budget on its own>
   size:
     buy_limit:      <units / 4h (tightest leg for C)>
@@ -453,7 +455,7 @@ harness could paper-trade it mechanically.
   confidence label to sample size and the lookback the data actually covers.
 - **Never recompute margin; never zero-fill prices.** (Constraints 1–2 above.)
 - **Answer every assigned signal.** A signal without a verdict blocks the queue.
-- **State the attention contract.** Every F/B strategy's `attention` field must let
+- **State the attention contract.** Every F/B/C strategy's `attention` field must let
   the operator decide if it fits their day: cadence, longest safe unattended window,
   reaction risk. Clear numeric rules a person can follow. Mirror it honestly in
   `attention_spec` — those two numbers drive the operator's ping and must match
