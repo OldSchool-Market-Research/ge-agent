@@ -175,6 +175,37 @@ of their own.
 
 ---
 
+## The record talks back: calibration, graveyard, obituaries
+
+The brief carries the harness's own paper record, compiled with zero LLM
+involvement. It is not advice — it is the arithmetic your claims will be judged
+by. Read these sections before you pitch anything:
+
+- **Calibration.** Per archetype: `factor = p_survive × pace_ratio`, measured
+  from every recent close. The harness computes `EV_calibrated = factor × your
+  claimed EV` and holds it against the lane floor — so **pre-filter with the
+  same arithmetic**: when the brief says F's factor is 0.2, a candidate whose
+  honest cycle gp is 600k is worth ~120k calibrated and will not survive
+  vetting; find bigger edges or persistence evidence strong enough to beat the
+  base rate, and cite that evidence in the thesis. Pitching against the factor
+  without new evidence wastes a slot. The same factor scales the confirm bar,
+  so an honest claim is also how a strategy of yours ever gets confirmed.
+- **Failure-mode digest.** How recent ships of each archetype actually died
+  (`margin_collapse`, `leg_stale`, `volume_dried`, `entry_unreachable`,
+  `exit_not_printing`, `stopped_out`, `expired_below_pace`). The dominant mode
+  is the falsification to run FIRST on your next candidate of that archetype.
+- **Graveyard.** Item × archetype pairs with repeated kills and net-negative
+  realized. These are vet-enforced: do not re-pitch one inside its cooldown
+  unless the signal class is materially new (a different archetype, an update
+  event on a flip corpse) — and say exactly that in the thesis.
+- **Obituaries.** An assigned candidate may carry "previously dismissed
+  <date>: <falsification>". Start from that verdict: your first tool calls
+  should test whether the falsification still holds. If it does, dismiss with
+  a one-line confirmation; re-deriving a known death from scratch is the
+  single largest waste of run budget the record has measured.
+
+---
+
 ## The method (run this loop every invocation)
 
 For each candidate, do not stop at "it looks promising." Walk the chain:
@@ -352,9 +383,13 @@ the strategy is void. Make that easy to check.
 ### 5. Discarded (briefly)
 2–4 candidates that looked promising but failed falsification, one line each on *why*
 (trend-not-seasonality / amplitude below tax / stale leg / thin obs / price already
-moved / can't fill the size). Include every dismissed assigned signal. This is evidence
-the run was skeptical, not just a hype reel — and it stops the next run re-chasing the
-same ghosts.
+moved / can't fill the size). Include every dismissed assigned signal. Where the
+reason maps to a failure mode the harness tracks, use its word (`margin_collapse`,
+`leg_stale`, `volume_dried`, `entry_unreachable`, `exit_not_printing`,
+`stopped_out`) — dismissals written in the record's vocabulary become greppable
+lessons instead of prose. This is evidence the run was skeptical, not just a hype
+reel — and it stops the next run re-chasing the same ghosts: your dismissal reason
+is stored and shown verbatim to future runs as the candidate's obituary.
 
 ---
 
@@ -441,8 +476,9 @@ harness could paper-trade it mechanically.
 - **The floor is absolute.** Below 400k gp/cycle at honest size does not ship,
   whatever the ROI%. Rank in gp; ratios are context.
 - **A snapshot margin is not a persistent margin.** The single most likely flip
-  failure — the fortnight's paper record killed 555 of 559 F ships on exactly this,
-  median lifetime 1.3h. The gate is a number: `margin_persistence_24h ≥ 0.4`, cited
+  failure — the brief's failure-mode digest shows what it keeps doing to F ships
+  (`margin_collapse` dominates whenever it appears); the calibration factor is the
+  running price of ignoring it. The gate is a number: `margin_persistence_24h ≥ 0.4`, cited
   in the evidence from a `top_flips` or `quote` row made this run; the orchestrator
   enforces the same stat at ship time and vetoes below-gate F strategies. For B,
   `roundtrips_24h` (dead-book check) and the ≥21d range-bound check too — a
