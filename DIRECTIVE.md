@@ -79,10 +79,18 @@ fill it, it isn't profit. And remember the harness paper-trades you **with a
 self-impact haircut** (≈15% volume participation, 0.5% slippage per side) — a strategy
 that only works at 100% of observed volume at exact observed prices is fantasy.
 
-**The floor is absolute: a strategy must clear ≥400,000 gp per cycle (100k gp/hr) at honest size,
-or it does not ship.** Dismiss below-floor candidates no matter how pretty the ratio.
-ROI%, amplitude% and margin% are display-only context — a 300% ROI on 400gp of
-capital is noise; a 1% edge that fills 20M is a business. Rank in gp, always.
+**The floors are absolute: F must clear ≥400,000 gp per cycle (100k gp/hr), C must
+clear ≥200,000 gp per cycle, at honest size — or it does not ship.** Dismiss
+below-floor candidates no matter how pretty the ratio. ROI%, amplitude% and margin%
+are display-only context — a 300% ROI on 400gp of capital is noise; a 1% edge that
+fills 20M is a business. Rank in gp, always.
+
+**The floor disqualifies; it does not calibrate ambition.** A floor is the line
+below which a candidate is noise — it is not the target to hug. Claims that cluster
+within 50% of the floor are a failed scan when the same screen shows bigger absolute
+edges. Rank the WHOLE candidate set by absolute gp and pitch from the top. The
+Digest must state the largest-gp candidate examined this run and, if it isn't your
+#1 pitch, why everything larger than your #1 was dismissed.
 
 ---
 
@@ -135,7 +143,7 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 | `top_flips(min_volume, min_vol24h, min_price, max_age, members?, sort_by, limit)` | **the flip lanes' discovery screen.** Lane F (volume flips): `min_vol24h=100000, sort_by=profit_per_limit`. Lane B (high-value flips): `min_price=10000000, min_vol24h=200, sort_by=margin`. The `gp_day` column is the absolute daily capacity ceiling — judge candidates by it, never by ratio alone. Every row carries `margin_persistence_24h` (share of the last 24h whose hourly avg post-tax spread held ≥ 50% of the current margin) and `roundtrips_24h` (30-min windows today where both sides printed at a positive post-tax spread) — the spike-vs-standing-spread numbers; a candidate below persistence 0.4 is a spike, not a lane-F thesis |
 | `volume_zscore(name_or_id?, window, baseline, …)` | find volume anomalies vs the item's own baseline (`same_how` = cycle-aware, `trailing` = robust-n) — the archetype-V source and trigger metric |
 | `movers(window, min_price, min_volume, limit)` | biggest % price moves — archetype-U dislocations |
-| `list_relations(kind?, name_or_id?)` | the archetype-C universe (inert while the relations table is absent — note it and move on) |
+| `list_relations(kind?, name_or_id?)` | the archetype-C universe — the record's best lane; price ≥5 relations every run |
 
 **Evidence (quantify, falsify, time):**
 
@@ -146,7 +154,8 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 | `seasonal_scan` / `seasonality(dimension, name_or_id?, smooth)` | hour-of-week structure as **timing evidence** — which hours the buy leg actually prints, when to place offers. `gp_cycle` gives its absolute scale. Not a strategy source |
 | `margin_zscore(baseline_window, min_samples, max_age, limit)` | is the current margin abnormally wide vs its own baseline — **exit-timing evidence only, never entry evidence**: a high z means the spread is at an extreme of its own history, i.e. you would be buying the top of the spike (the paper record's #1 killer). A candidate found here must still pass the persistence gate |
 | `quote(name_or_id)` / `quotes([…])` | live both-leg snapshot + per-leg freshness (≤25 batched) — rows carry `margin_persistence_24h` / `roundtrips_24h`, so the pre-ship quote check also re-verifies persistence |
-| `combo_quote(relation_id, direction)` | price a conversion end-to-end post-tax — the C falsification primitive |
+| `combo_quote(relation_id, direction)` | price a conversion end-to-end post-tax — the C falsification primitive. Legs carry `trades_24h`/`typical_gap_s`; the summary's `worst_leg_age_ratio` (age ÷ typical gap) is the freshness judge — ≤ ~3 is normal cadence, higher means re-quote, never dismiss on wall-clock age |
+| `flip_quote(name_or_id, units, entry_price?, exit_price?)` | **the F/B ship-time sizer** — the orchestrator's own veto arithmetic (`fillable_units`, `per_cycle_ceiling`, `vet_max_claim`) plus `harness_per_1h`, the projection your realized pace is judged against. Mandatory second-to-last call before shipping any flip |
 | `liquidity(name_or_id, window)` | summed recent 5m volume for sizing |
 | `lookup_item(query, limit)` | resolve a name → id (+ `buy_limit`, `members`) |
 
@@ -237,9 +246,14 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
    - **V**: is the anomaly one-sided (hoard/dump) or two-sided (repricing)? Has price
      *already* moved (`price_move_pct` — if yes, the edge is gone)? Is `n_baseline`
      enough to trust the z?
-   - **C**: are **all legs fresh** and liquid (`combo_quote`: `max_leg_age_s`,
-     `min_leg_vol5m`)? Does the margin survive the tightest leg's throughput? Any
-     skill/quest gate in `notes` a buyer must satisfy?
+   - **C**: are all legs fresh **relative to their own cadence** (`combo_quote`:
+     `worst_leg_age_ratio` ≤ ~3 is that leg's normal print rate — wall-clock age
+     alone is NOT staleness; a high ratio means re-call `combo_quote` before
+     judging, never dismiss on age)? Does the margin survive the tightest leg's
+     throughput? Any skill/quest gate in `notes` a buyer must satisfy? Budget-size
+     before judging: `per_cycle_gp = combo_margin × min(units_bound_per_4h, ~15% of
+     the tightest leg's 4h volume)` — "small per conversion" is never a dismissal
+     reason; a 32k/conversion edge at 100 conversions/4h is a 3.2M/cycle candidate.
    - **U**: is the event real and dated? What's the base rate for this event class
      moving this item? Ride and fade cannot both be your thesis — pick one and say why.
    If the disconfirming check fails, **discard the hypothesis** — don't soften it.
@@ -247,12 +261,15 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
    there when you trade (24h volume for F; the budget's affordable units for B;
    post-shock volume for V — haircut it; tightest leg for C). State capital required
    (≤ the research budget, per-opportunity) and the absolute gp per cycle. Post-tax,
-   always.
+   always. **Use the scale**: if `capital_required` is under half the budget, name
+   what binds (buy limit or volume share). A 1–2% ROI on 20–30M is the *intended
+   shape* of this system's edge — prefer widening size to the binding constraint
+   over adding a second marginal idea.
 6. **Spec.** Emit the strategy object with the kind-specific structured fields
    (schema below) — the harness paper-trades exactly what you write there.
-7. **Rank.** Order by absolute post-tax gp/day. Dismiss anything below the 400k
-   gp/cycle floor regardless of its ratios. Confidence must be *earned by evidence*
-   (sample size + lookback covered), not asserted.
+7. **Rank.** Order by absolute post-tax gp/day. Dismiss anything below its lane
+   floor (F 400k, C 200k gp/cycle) regardless of its ratios. Confidence must be
+   *earned by evidence* (sample size + lookback covered), not asserted.
 
 ---
 
@@ -260,8 +277,8 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
 
 Every strategy is exactly one of these kinds. The letter drives the id prefix, the
 required structured fields, and how the harness evaluates you. The shippable kinds
-are **F, B, V, U** (and C when the relations table exists). **S and H are retired**
-as shippable kinds — see the note at the end of this section.
+are **F, C, B, V, U**. **S and H are retired** as shippable kinds — see the note at
+the end of this section.
 
 ### F — Volume flip *(the flagship)*
 *Claim:* item X's post-tax spread times a full buy limit pays ≥400k gp per 4h cycle,
@@ -298,16 +315,23 @@ every 5 minutes and starts paper-trading only when it fires (never triggers in 7
 expires). Post-shock volume overstates fillable size — haircut hard.
 
 ### C — Conversion arbitrage *(multi-leg, direction-neutral)*
-*Claim:* the sum-of-parts gap on relation R currently pays after tax and fees.
+*Claim:* the sum-of-parts gap on relation R pays ≥200k gp per 4h batch after tax and
+fees at budget size. This is the record's best lane — the edge is mechanical (GE
+clerk, Bob Barter, an anvil), not a bet on spread timing.
 *Find:* `list_relations` → `combo_quote` each candidate (try both directions on
-reversible ones). *Spec:* `legs` (copied from combo_quote — the harness re-prices
-exactly these), `relation_id`, `entry_price` = input cost per conversion,
-`exit_price` = post-tax output revenue. ≥1 buy leg and ≥1 sell leg; every leg item also
-in `items`. `attention` + `attention_spec` required: a conversion's cadence is batch
+reversible ones). **Every run must price at least 5 relations** (assigned combo
+signals count toward the 5) and record their budget-sized gp/4h in Proof or
+Discarded — a run that never priced a conversion did not scan the best lane.
+*Spec:* `legs` (copied from combo_quote — the harness re-prices exactly these),
+`relation_id`, `entry_price` = input cost per conversion, `exit_price` = post-tax
+output revenue. ≥1 buy leg and ≥1 sell leg; every leg item also in `items`.
+`per_cycle_gp` must be ≥ 200,000 at budget size — the validator rejects below-floor
+C strategies; budget-size the batch before judging (margin × conversions/4h, never
+margin × 1). `attention` + `attention_spec` required: a conversion's cadence is batch
 time (place offers, convert at a bank, relist), and between batches it sits safely
 unattended — say so in numbers. Surface skill/quest gates from `notes` in the risks.
-The tightest leg's buy limit and volume bound throughput. (Inert while `list_relations` reports the
-relations table absent — note it and move on.)
+The tightest leg's buy limit and volume bound throughput. Judge leg freshness by
+`worst_leg_age_ratio`, not wall clock (see the method's C check).
 
 ### U — Update / event speculation *(event-anchored)*
 *Claim:* game event E on date D will dislocate item X; position before/into it and
@@ -424,7 +448,7 @@ harness could paper-trade it mechanically.
     vol_constrained:<units fillable at ~15% share of the RELEVANT volume>
     units_used:     <min of the two>
   expected_value:
-    per_cycle_gp:   <post-tax; F: one 4h buy-limit cycle, MUST be ≥ 400,000>
+    per_cycle_gp:   <post-tax; F: one 4h buy-limit cycle, MUST be ≥ 400,000; C: one 4h batch at budget size, MUST be ≥ 200,000>
     per_1h_gp:      <post-tax; F: per_cycle/4, B: per_cycle/turnaround hours>
     per_day_gp:     <post-tax>
     roi_pct:        <per-cycle return on capital_required — display-only context>
@@ -447,15 +471,19 @@ harness could paper-trade it mechanically.
 
 ## Guardrails (read before shipping anything)
 
-- **Quote before you ship — the last call for every strategy is `quote()` on its
-  primary item.** Verify against that LIVE quote, not numbers from earlier in the
-  run: (a) `kill_price` is **not already breached** — if the live price is already
+- **Quote before you ship — the last TWO calls for every F/B strategy are
+  `flip_quote(item, units_used, entry_price, exit_price)` then `quote()` on its
+  primary item.** `flip_quote` runs the orchestrator's own ship-time arithmetic:
+  set `per_cycle_gp` **no higher than its `per_cycle_ceiling`** — claims above
+  `vet_max_claim` (2× ceiling) are vetoed with exactly that math, and the first
+  post-gate week lost 35 of 37 ships to it. Then verify against the LIVE `quote()`:
+  (a) `kill_price` is **not already breached** — if the live price is already
   at or past your stop, the thesis is dead on arrival, fix the spec or discard;
   (b) `entry_price` is consistent with where the market actually is; (c)
   `capital_required` fits the research budget **on its own** and `per_cycle_gp`
   clears the floor. The orchestrator re-checks all of these at ingest and **vetoes**
   violators — a vetoed strategy is worse than no strategy, because it burned a slot
-  and proved nothing.
+  and proved nothing. (For C, the equivalent is a final fresh `combo_quote`.)
 - **Ship nothing when nothing clears the bar.** An empty strategies list with a
   complete Discarded section is a first-class outcome. Never lower the floor, resize
   a dead idea to fit, or ship a below-floor strategy to have something to show.
@@ -473,8 +501,10 @@ harness could paper-trade it mechanically.
   fix and resubmit.
 - **Falsify, don't confirm.** Default to looking for the reason a pattern is noise. A
   strategy you couldn't kill is worth more than ten you only cheerled.
-- **The floor is absolute.** Below 400k gp/cycle at honest size does not ship,
-  whatever the ROI%. Rank in gp; ratios are context.
+- **The floors are absolute — and they are disqualifiers, not targets.** Below
+  400k gp/cycle (F) / 200k (C) at honest size does not ship, whatever the ROI%.
+  Rank in gp; ratios are context. Claims hugging the floor when the screen showed
+  bigger edges is a failed scan, not prudence.
 - **A snapshot margin is not a persistent margin.** The single most likely flip
   failure — the brief's failure-mode digest shows what it keeps doing to F ships
   (`margin_collapse` dominates whenever it appears); the calibration factor is the
@@ -496,8 +526,12 @@ harness could paper-trade it mechanically.
   reaction risk. Clear numeric rules a person can follow. Mirror it honestly in
   `attention_spec` — those two numbers drive the operator's ping and must match
   the prose, not flatter the strategy into "low-touch."
-- **Quantity over noise is wrong.** Prefer 3 strategies you'd stake gp on to 25 you
-  wouldn't — and zero over one you wouldn't. Rank ruthlessly.
+- **Quantity over noise is wrong — but underfilling an empty book is too.** Prefer
+  3 strategies you'd stake gp on to 25 you wouldn't — and zero over one you
+  wouldn't. Rank ruthlessly. When the brief's Open book shows free slots, filling
+  several of them with *independent* strategies in one run is first-class: 2
+  uncorrelated ships beat 3 that share a failure mode, and 1 good ship when 5
+  slots sit free is an underfilled run, not discipline.
 
 ---
 
