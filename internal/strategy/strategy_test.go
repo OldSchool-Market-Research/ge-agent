@@ -42,17 +42,17 @@ const validC = `{
   "title": "Prayer potion 3->4 decant", "thesis": "dose-price divergence, direction-neutral",
   "items": [{"name": "Prayer potion(3)", "id": 139, "buy_limit": 2000, "members": true},
             {"name": "Prayer potion(4)", "id": 2434, "buy_limit": 2000, "members": true}],
-  "entry": "buy 4x 3-dose at 6900", "exit": "sell 3x 4-dose at 9500",
-  "entry_price": 27600, "exit_price": 27930, "kill_price": null,
+  "entry": "buy 4x 3-dose at 6900", "exit": "sell 3x 4-dose at 9700",
+  "entry_price": 27600, "exit_price": 28518, "kill_price": null,
   "horizon": "minutes per conversion", "capital_required": 13800000,
   "attention": "batch whenever convenient: place buys, decant at a bank (~2 min), relist; safe unattended indefinitely between batches",
   "attention_spec": {"checks_per_hour": 1, "max_unattended_hours": 24},
-  "size": {"buy_limit": 500, "vol_constrained": 200, "units_used": 200},
-  "expected_value": {"per_cycle_gp": 66000, "per_1h_gp": 16500, "per_day_gp": 396000, "roi_pct": 1.2},
+  "size": {"buy_limit": 500, "vol_constrained": 500, "units_used": 500},
+  "expected_value": {"per_cycle_gp": 459000, "per_1h_gp": 114750, "per_day_gp": 2754000, "roi_pct": 3.3},
   "confidence": "high", "confidence_why": "both legs fresh, deep volume", "evidence": "combo_quote relation 1",
   "invalidation": "combo margin negative for 1h", "risks": ["leg_fill_risk"], "paper_trade": "10 conversions",
   "legs": [{"item_id": 139, "name": "Prayer potion(3)", "side": "buy", "qty": 4, "price": 6900},
-           {"item_id": 2434, "name": "Prayer potion(4)", "side": "sell", "qty": 3, "price": 9500}],
+           {"item_id": 2434, "name": "Prayer potion(4)", "side": "sell", "qty": 3, "price": 9700}],
   "relation_id": 1
 }`
 
@@ -435,6 +435,13 @@ func TestVKindRules(t *testing.T) {
 }
 
 func TestCKindRules(t *testing.T) {
+	t.Run("below floor rejected", func(t *testing.T) {
+		m, rerun := parseOne(t, validC)
+		m["expected_value"] = map[string]any{"per_cycle_gp": 66000, "per_1h_gp": 16500, "per_day_gp": 396000, "roi_pct": 1.2}
+		if reason := rerun(m); !strings.Contains(reason, "per_cycle_gp") {
+			t.Fatalf("got %q", reason)
+		}
+	})
 	t.Run("missing legs", func(t *testing.T) {
 		m, rerun := parseOne(t, validC)
 		delete(m, "legs")
@@ -460,7 +467,7 @@ func TestCKindRules(t *testing.T) {
 	})
 	t.Run("negative combo rejected", func(t *testing.T) {
 		m, rerun := parseOne(t, validC)
-		m["entry_price"] = 28000 // above exit 27930
+		m["entry_price"] = 29000 // above exit 28518
 		if reason := rerun(m); !strings.Contains(reason, "entry_price") {
 			t.Fatalf("got %q", reason)
 		}

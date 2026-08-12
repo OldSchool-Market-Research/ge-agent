@@ -158,10 +158,16 @@ var (
 // FloorF raised 200k -> 400k/cycle (100k gp/hr) 2026-08-01: the fortnight
 // backtest showed the 200-400k tail contributed negative net — cutting it
 // raised total P&L while halving positions to watch.
+// FloorC added 2026-08-11: C gets an explicit floor below F's on purpose —
+// conversions are mechanical (no spread-timing risk), the lane has the best
+// realized-to-claim ratio in the record, and its attention cost is batchy.
+// "Small per conversion" is never a dismissal reason; the floor judges the
+// budget-sized per-cycle total.
 const (
 	ResearchBudgetGp = 50_000_000
 	FloorFPerCycleGp = 400_000
 	FloorBPerCycleGp = 100_000
+	FloorCPerCycleGp = 200_000
 	MinBEntryPriceGp = 10_000_000
 )
 
@@ -479,6 +485,9 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 		}
 		if s.EntryPrice >= s.ExitPrice {
 			return p("entry_price", "must be below exit_price for archetype C (entry_price = input cost per conversion, exit_price = post-tax output revenue)")
+		}
+		if s.ExpectedValue.PerCycleGp < FloorCPerCycleGp {
+			return p("expected_value.per_cycle_gp", fmt.Sprintf("must be >= %d for archetype C — below the floor does not ship, dismiss it instead (budget-size the batch first: margin x conversions/4h, not margin x 1)", FloorCPerCycleGp))
 		}
 		if strings.TrimSpace(s.Attention) == "" {
 			return p("attention", "required for archetype C — batch cadence (offers + conversion time), longest safe unattended window, reaction risk")

@@ -151,8 +151,15 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 	history := []llm.Message{{Role: "user", Content: llm.TextContent(
 		"Run one full research cycle now, per the directive. Finish by calling submit_report with the complete report.")}}
 
+	// A rejected submit_report means a complete, fixable report is in hand —
+	// the highest-value turns of the whole run. Grant a one-time grace
+	// extension the first time a submit is rejected, so a rejection landing
+	// near the turn budget doesn't throw away the entire cycle's research.
+	const graceTurns = 4
 	nudges := 0
-	for turn := 1; turn <= cfg.MaxTurns; turn++ {
+	maxTurns := cfg.MaxTurns
+	graceGranted := false
+	for turn := 1; turn <= maxTurns; turn++ {
 		resp, err := client.Send(ctx, system, history, tools, cfg.MaxTokens)
 		if err != nil {
 			return failRun(reportPath, bridge, fmt.Errorf("turn %d: %w", turn, err))
@@ -180,7 +187,12 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 					return path, nil
 				}
 				log.Printf("report rejected: %s", gateErr)
-				results = append(results, llm.ToolResult(tu.ID, `{"error":{"code":"invalid_report","reason":"`+gateErr+`"}}`, true))
+				if !graceGranted {
+					graceGranted = true
+					maxTurns += graceTurns
+					log.Printf("grace: +%d turns to fix the rejected report (budget now %d)", graceTurns, maxTurns)
+				}
+				results = append(results, llm.ToolResult(tu.ID, `{"error":{"code":"invalid_report","reason":"`+gateErr+` -- fix ONLY the named field and resubmit; do not re-run research"}}`, true))
 				continue
 			}
 			text, isErr, err := bridge.Call(ctx, tu.Name, tu.Input)
@@ -192,7 +204,7 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 		}
 		history = append(history, llm.Message{Role: "user", Content: llm.MakeContent(results...)})
 	}
-	return failRun(reportPath, bridge, fmt.Errorf("MAX_TURNS (%d) exhausted without a valid report", cfg.MaxTurns))
+	return failRun(reportPath, bridge, fmt.Errorf("MAX_TURNS (%d, incl. any grace) exhausted without a valid report", maxTurns))
 }
 
 // newHTTPClient allows long per-request times: M3 is a reasoning model and
