@@ -23,6 +23,15 @@ type Config struct {
 	Directive  string        // GE_AGENT_DIRECTIVE — path to DIRECTIVE.md
 	BriefFile  string        // GE_AGENT_BRIEF_FILE — optional per-run brief appended to the system prompt
 	Timeout    time.Duration // GE_AGENT_RUN_TIMEOUT — whole-run ceiling
+
+	// PruneKeepTurns: how many of the newest tool-result messages keep their
+	// full contents when the transcript is resent (older ones are stubbed —
+	// the audit log and report appendix always keep everything). <= 0
+	// disables tool-result pruning.
+	PruneKeepTurns int // GE_AGENT_PRUNE_KEEP_TURNS
+	// CacheControl marks system+tools with prompt-cache breakpoints. Off
+	// until MiniMax's Anthropic-compatible endpoint is verified to accept it.
+	CacheControl bool // GE_AGENT_CACHE_CONTROL
 }
 
 func Load() (*Config, error) {
@@ -38,6 +47,9 @@ func Load() (*Config, error) {
 		Directive:  getenv("GE_AGENT_DIRECTIVE", "DIRECTIVE.md"),
 		BriefFile:  os.Getenv("GE_AGENT_BRIEF_FILE"),
 		Timeout:    time.Duration(getenvInt("GE_AGENT_RUN_TIMEOUT_S", 3600)) * time.Second,
+
+		PruneKeepTurns: getenvInt("GE_AGENT_PRUNE_KEEP_TURNS", 2),
+		CacheControl:   os.Getenv("GE_AGENT_CACHE_CONTROL") == "1",
 	}
 	if c.APIKey == "" {
 		c.APIKey = keyFromDotEnv(".env", "minimax")

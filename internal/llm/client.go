@@ -21,6 +21,13 @@ type Client struct {
 	APIKey  string
 	Model   string
 	HTTP    *http.Client
+
+	// CacheControl marks the system prompt and tool definitions with
+	// Anthropic prompt-caching breakpoints (~21k tokens of boilerplate that
+	// is identical every turn). Off by default: MiniMax's compatible endpoint
+	// has not been verified to accept the field — flip GE_AGENT_CACHE_CONTROL
+	// after one observed run, not before.
+	CacheControl bool
 }
 
 // Message content is kept as raw JSON: assistant turns are echoed back into
@@ -56,7 +63,7 @@ type Response struct {
 type request struct {
 	Model     string            `json:"model"`
 	MaxTokens int               `json:"max_tokens"`
-	System    string            `json:"system,omitempty"`
+	System    any               `json:"system,omitempty"`
 	Messages  []Message         `json:"messages"`
 	Tools     []json.RawMessage `json:"tools,omitempty"`
 }
@@ -93,8 +100,19 @@ func TextContent(text string) json.RawMessage {
 // Send posts one messages request, retrying transient failures (429/5xx,
 // network errors) with linear backoff.
 func (c *Client) Send(ctx context.Context, system string, msgs []Message, tools []json.RawMessage, maxTokens int) (*Response, error) {
+	var sys any
+	if system != "" {
+		sys = system
+	}
+	if c.CacheControl {
+		if system != "" {
+			sys = []map[string]any{{"type": "text", "text": system,
+				"cache_control": map[string]string{"type": "ephemeral"}}}
+		}
+		tools = withToolsBreakpoint(tools)
+	}
 	body, err := json.Marshal(request{
-		Model: c.Model, MaxTokens: maxTokens, System: system, Messages: msgs, Tools: tools,
+		Model: c.Model, MaxTokens: maxTokens, System: sys, Messages: msgs, Tools: tools,
 	})
 	if err != nil {
 		return nil, err
@@ -159,6 +177,29 @@ func (c *Client) post(ctx context.Context, body []byte) (*Response, bool, error)
 		return nil, false, fmt.Errorf("llm: bad content blocks: %w", err)
 	}
 	return &out, false, nil
+}
+
+// withToolsBreakpoint returns tools with a cache_control breakpoint injected
+// into the LAST definition — tool defs are a stable prefix segment, so one
+// breakpoint covers them all. The originals are never mutated. Any parse
+// surprise returns the input unchanged.
+func withToolsBreakpoint(tools []json.RawMessage) []json.RawMessage {
+	if len(tools) == 0 {
+		return tools
+	}
+	var last map[string]any
+	if json.Unmarshal(tools[len(tools)-1], &last) != nil {
+		return tools
+	}
+	last["cache_control"] = map[string]string{"type": "ephemeral"}
+	raw, err := json.Marshal(last)
+	if err != nil {
+		return tools
+	}
+	out := make([]json.RawMessage, len(tools))
+	copy(out, tools)
+	out[len(out)-1] = raw
+	return out
 }
 
 func truncate(s string, n int) string {

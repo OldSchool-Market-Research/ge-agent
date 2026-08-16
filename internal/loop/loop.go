@@ -138,7 +138,7 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 	tools = append(tools, submitReportDef)
 
 	client := &llm.Client{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Model: cfg.Model,
-		HTTP: newHTTPClient()}
+		HTTP: newHTTPClient(), CacheControl: cfg.CacheControl}
 
 	system := string(directive) + "\n\n---\n\n" + harnessPreamble(runStart)
 	if cfg.BriefFile != "" {
@@ -159,19 +159,30 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 	nudges := 0
 	maxTurns := cfg.MaxTurns
 	graceGranted := false
+	stats := report.RunStats{RunStartedAt: runStart, Outcome: "failed"}
 	for turn := 1; turn <= maxTurns; turn++ {
-		resp, err := client.Send(ctx, system, history, tools, cfg.MaxTokens)
+		sendable, prunedBytes := pruneHistory(history, cfg.PruneKeepTurns)
+		stats.PrunedBytes += prunedBytes
+		resp, err := client.Send(ctx, system, sendable, tools, cfg.MaxTokens)
 		if err != nil {
-			return failRun(reportPath, bridge, fmt.Errorf("turn %d: %w", turn, err))
+			return failRun(reportPath, bridge, &stats, fmt.Errorf("turn %d: %w", turn, err))
 		}
-		log.Printf("turn %d: stop=%s in=%d out=%d", turn, resp.StopReason, resp.Usage.InputTokens, resp.Usage.OutputTokens)
+		stats.Turns = turn
+		stats.InputTokens += resp.Usage.InputTokens
+		stats.OutputTokens += resp.Usage.OutputTokens
+		if resp.Usage.InputTokens > stats.PeakInput {
+			stats.PeakInput = resp.Usage.InputTokens
+		}
+		turnStat := report.TurnStat{Turn: turn, InputTokens: resp.Usage.InputTokens, OutputTokens: resp.Usage.OutputTokens}
+		log.Printf("turn %d: stop=%s in=%d out=%d pruned=%dB", turn, resp.StopReason, resp.Usage.InputTokens, resp.Usage.OutputTokens, prunedBytes)
 		history = append(history, llm.Message{Role: "assistant", Content: resp.Content})
 
 		toolUses := collectToolUses(resp.Blocks)
 		if len(toolUses) == 0 {
+			stats.PerTurn = append(stats.PerTurn, turnStat)
 			// Model stopped talking instead of submitting. Nudge twice, then fail.
 			if nudges++; nudges > 2 {
-				return failRun(reportPath, bridge, fmt.Errorf("model ended without submit_report after %d nudges", nudges-1))
+				return failRun(reportPath, bridge, &stats, fmt.Errorf("model ended without submit_report after %d nudges", nudges-1))
 			}
 			history = append(history, llm.Message{Role: "user", Content: llm.TextContent(
 				"You have not submitted the report. Continue the cycle and finish by calling submit_report exactly once.")})
@@ -184,6 +195,11 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 				path, gateErr := handleSubmit(tu.Input, reportPath, runStart, bridge)
 				if gateErr == "" {
 					log.Printf("report accepted: %s", path)
+					stats.Outcome = "submitted"
+					stats.PerTurn = append(stats.PerTurn, turnStat)
+					if err := report.WriteStats(path, stats); err != nil {
+						log.Printf("could not write run stats: %v", err)
+					}
 					return path, nil
 				}
 				log.Printf("report rejected: %s", gateErr)
@@ -197,14 +213,17 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 			}
 			text, isErr, err := bridge.Call(ctx, tu.Name, tu.Input)
 			if err != nil {
-				return failRun(reportPath, bridge, fmt.Errorf("tool %s: %w", tu.Name, err))
+				return failRun(reportPath, bridge, &stats, fmt.Errorf("tool %s: %w", tu.Name, err))
 			}
 			log.Printf("  tool %s (err=%v, %d bytes)", tu.Name, isErr, len(text))
+			stats.ToolCalls++
+			turnStat.ToolCalls++
 			results = append(results, llm.ToolResult(tu.ID, text, isErr))
 		}
+		stats.PerTurn = append(stats.PerTurn, turnStat)
 		history = append(history, llm.Message{Role: "user", Content: llm.MakeContent(results...)})
 	}
-	return failRun(reportPath, bridge, fmt.Errorf("MAX_TURNS (%d, incl. any grace) exhausted without a valid report", maxTurns))
+	return failRun(reportPath, bridge, &stats, fmt.Errorf("MAX_TURNS (%d, incl. any grace) exhausted without a valid report", maxTurns))
 }
 
 // newHTTPClient allows long per-request times: M3 is a reasoning model and
@@ -220,7 +239,10 @@ func harnessPreamble(runStart time.Time) string {
   with the complete markdown; the harness owns the filename and appends the
   authoritative tool-call appendix.
 - Every tool response is a JSON envelope {as_of, data_window, row_count, rows, ...}.
-  An empty rows with a note is a real "nothing traded" signal, not an error.`,
+  An empty rows with a note is a real "nothing traded" signal, not an error.
+- To keep turns affordable, OLD tool results in your context may be trimmed to a
+  stub (marked "[harness: … pruned …]"). Numbers you already worked from stand;
+  if you need trimmed data again, re-call the tool — do not guess from the stub.`,
 		runStart.Format("2006-01-02 15:04"))
 }
 
@@ -267,12 +289,18 @@ func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, 
 }
 
 // failRun preserves the audit trail: writes <name>-FAILED.md with the reason
-// and every call made, then returns the error.
-func failRun(reportPath string, bridge *mcpbridge.Bridge, cause error) (string, error) {
+// and every call made, plus the run's cost record — a failed run burned
+// tokens too, and that is exactly when the burn must stay visible.
+func failRun(reportPath string, bridge *mcpbridge.Bridge, stats *report.RunStats, cause error) (string, error) {
 	failed := strings.TrimSuffix(reportPath, ".md") + "-FAILED.md"
 	md := fmt.Sprintf("# FAILED run\n\nReason: %s\n\nNo valid report was submitted. The tool-call log below records everything this run actually did.\n", cause)
 	if err := report.Write(failed, md, bridge.AuditLog()); err != nil {
 		log.Printf("could not write failure report: %v", err)
+	}
+	stats.Outcome = "failed"
+	stats.FailReason = cause.Error()
+	if err := report.WriteStats(failed, *stats); err != nil {
+		log.Printf("could not write run stats: %v", err)
 	}
 	return "", cause
 }
