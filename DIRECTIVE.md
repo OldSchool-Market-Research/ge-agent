@@ -153,8 +153,9 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 | `screen(metric, window, min_obs, limit)` | `range_position` over ≥21d = lane-B qualification (mid-band and stable, not a falling knife); `surge`/`imbalance`/`volatility`/`momentum`/`persistence`/`spread_gap` as supporting lenses |
 | `seasonal_scan` / `seasonality(dimension, name_or_id?, smooth)` | hour-of-week structure as **timing evidence** — which hours the buy leg actually prints, when to place offers. `gp_cycle` gives its absolute scale. Not a strategy source |
 | `margin_zscore(baseline_window, min_samples, max_age, limit)` | is the current margin abnormally wide vs its own baseline — **exit-timing evidence only, never entry evidence**: a high z means the spread is at an extreme of its own history, i.e. you would be buying the top of the spike (the paper record's #1 killer). A candidate found here must still pass the persistence gate |
-| `quote(name_or_id)` / `quotes([…])` | live both-leg snapshot + per-leg freshness (≤25 batched) — rows carry `margin_persistence_24h` / `roundtrips_24h`, so the pre-ship quote check also re-verifies persistence |
-| `combo_quote(relation_id, direction)` | price a conversion end-to-end post-tax — the C falsification primitive. Legs carry `trades_24h`/`typical_gap_s`; the summary's `worst_leg_age_ratio` (age ÷ typical gap) is the freshness judge — ≤ ~3 is normal cadence, higher means re-quote, never dismiss on wall-clock age |
+| `quote(name_or_id)` / `quotes([…])` | live both-leg snapshot + per-leg freshness — rows carry `margin_persistence_24h` / `roundtrips_24h`, so the pre-ship quote check also re-verifies persistence. **Checking 2+ items? Always `quotes` (≤25 batched), never a string of single `quote` calls** — every extra call resends your whole context |
+| `combo_screen(kind?, relation_ids?, limit)` | **the C opener**: prices the ENTIRE relation universe in one call, one summary row per relation ranked by `combo_margin` (nulls last, `missing_legs` marks unpriceable). Replaces calling `combo_quote` per relation — screen once, deep-dive the top few |
+| `combo_quote(relation_id, direction)` | price ONE conversion end-to-end post-tax — the C falsification primitive, for the few relations `combo_screen` ranked worth a look (and the only way to price `reverse`). Legs carry `trades_24h`/`typical_gap_s`; the summary's `worst_leg_age_ratio` (age ÷ typical gap) is the freshness judge — ≤ ~3 is normal cadence, higher means re-quote, never dismiss on wall-clock age |
 | `flip_quote(name_or_id, units, entry_price?, exit_price?)` | **the F/B ship-time sizer** — the orchestrator's own veto arithmetic (`fillable_units`, `per_cycle_ceiling`, `vet_max_claim`) plus `harness_per_1h`, the projection your realized pace is judged against. Mandatory second-to-last call before shipping any flip |
 | `liquidity(name_or_id, window)` | summed recent 5m volume for sizing |
 | `lookup_item(query, limit)` | resolve a name → id (+ `buy_limit`, `members`) |
@@ -318,10 +319,13 @@ expires). Post-shock volume overstates fillable size — haircut hard.
 *Claim:* the sum-of-parts gap on relation R pays ≥200k gp per 4h batch after tax and
 fees at budget size. This is the record's best lane — the edge is mechanical (GE
 clerk, Bob Barter, an anvil), not a bet on spread timing.
-*Find:* `list_relations` → `combo_quote` each candidate (try both directions on
-reversible ones). **Every run must price at least 5 relations** (assigned combo
-signals count toward the 5) and record their budget-sized gp/4h in Proof or
-Discarded — a run that never priced a conversion did not scan the best lane.
+*Find:* `combo_screen` once — it prices EVERY relation and hands you the ranked
+list, satisfying the price-at-least-5 rule in a single call — then `combo_quote`
+only the top few (and reversible candidates in `reverse`, which the screen cannot
+price). Never sweep the universe with per-relation `combo_quote` calls; that was
+run 921's single biggest token sink. Record the screen's top rows' budget-sized
+gp/4h in Proof or Discarded — a run that never priced a conversion did not scan
+the best lane.
 *Spec:* `legs` (copied from combo_quote — the harness re-prices exactly these),
 `relation_id`, `entry_price` = input cost per conversion, `exit_price` = post-tax
 output revenue. ≥1 buy leg and ≥1 sell leg; every leg item also in `items`.
