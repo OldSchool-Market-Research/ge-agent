@@ -139,6 +139,17 @@ type Strategy struct {
 }
 
 // Sidecar is the machine-readable artifact written next to the report.
+//
+// Every free-text field on Strategy and Sidecar (Title, Thesis, Entry, Exit,
+// Evidence, ConfidenceWhy, Invalidation, Risks, Attention, Event.Description,
+// SignalVerdict.Reason, and item Name fields) is untrusted for HTML/markdown
+// rendering purposes. Validate only enforces structure (types, enums,
+// numeric ranges) — it does not sanitize prose, and the model can quote
+// upstream data verbatim (e.g. OSRS Wiki item names surfaced by ge-mcp,
+// which are Jagex-controlled and not vetted here). Consumers of this file
+// (ge-orchestrator, ge-dashboard) must HTML-escape these fields before
+// rendering them; treating them as pre-sanitized is a rendering-side bug in
+// the consumer, not a contract this package provides.
 type Sidecar struct {
 	RunStartedAt   time.Time       `json:"run_started_at"`
 	ReportPath     string          `json:"report_path"`
