@@ -574,3 +574,73 @@ func TestHourWindowContains(t *testing.T) {
 		}
 	}
 }
+
+// MiniMax writes numbers as quoted strings often enough that rejecting them
+// looped whole runs to death (run 1183, 2026-09-11). Unambiguous numeric
+// strings are coerced; anything with units or arithmetic still rejects, with
+// a hint that matches the field's real type.
+func TestQuotedNumbersCoerced(t *testing.T) {
+	t.Run("fractional float field", func(t *testing.T) {
+		quoted := strings.Replace(validF, `"checks_per_hour": 0.5`, `"checks_per_hour": "0.5"`, 1)
+		list, reason := Parse(json.RawMessage("[" + quoted + "]"))
+		if reason != "" {
+			t.Fatalf("quoted 0.5 should be accepted, got %q", reason)
+		}
+		if got := list[0].AttentionSpec.ChecksPerHour; got != 0.5 {
+			t.Fatalf("checks_per_hour = %v, want 0.5", got)
+		}
+	})
+	t.Run("integer field with thousands separators", func(t *testing.T) {
+		quoted := strings.Replace(validF, `"capital_required": 21032000`, `"capital_required": "21,032,000"`, 1)
+		list, reason := Parse(json.RawMessage("[" + quoted + "]"))
+		if reason != "" {
+			t.Fatalf("quoted 21,032,000 should be accepted, got %q", reason)
+		}
+		if got := list[0].CapitalRequired; got != 21032000 {
+			t.Fatalf("capital_required = %d, want 21032000", got)
+		}
+	})
+	t.Run("several quoted fields across several strategies", func(t *testing.T) {
+		a := strings.Replace(validF, `"checks_per_hour": 0.5`, `"checks_per_hour": "0.5"`, 1)
+		a = strings.Replace(a, `"per_day_gp": 880000`, `"per_day_gp": "880000"`, 1)
+		b := strings.Replace(validB, `"max_unattended_hours": 24`, `"max_unattended_hours": "24"`, 1)
+		list, reason := Parse(json.RawMessage("[" + a + "," + b + "]"))
+		if reason != "" {
+			t.Fatalf("want accepted, got %q", reason)
+		}
+		if list[0].ExpectedValue.PerDayGp != 880000 || list[1].AttentionSpec.MaxUnattendedHours != 24 {
+			t.Fatalf("coerced values not applied: %+v / %+v", list[0].ExpectedValue, list[1].AttentionSpec)
+		}
+	})
+	t.Run("existing numbers survive byte-for-byte", func(t *testing.T) {
+		quoted := strings.Replace(validB, `"checks_per_hour": 0.1`, `"checks_per_hour": "0.1"`, 1)
+		list, reason := Parse(json.RawMessage("[" + quoted + "]"))
+		if reason != "" {
+			t.Fatalf("want accepted, got %q", reason)
+		}
+		if list[0].EntryPrice != 23012123 || list[0].CapitalRequired != 46024246 {
+			t.Fatalf("untouched numbers changed: %+v", list[0])
+		}
+	})
+	t.Run("string with units still rejected, float hint", func(t *testing.T) {
+		bad := strings.Replace(validF, `"checks_per_hour": 0.5`, `"checks_per_hour": "2 per hour"`, 1)
+		_, reason := Parse(json.RawMessage("[" + bad + "]"))
+		if reason == "" || !strings.Contains(reason, "checks_per_hour") || !strings.Contains(reason, "decimals allowed") || strings.Contains(reason, "plain integers") {
+			t.Fatalf("want float-typed rejection naming the field, got %q", reason)
+		}
+	})
+	t.Run("fraction into an integer field rejected, integer hint", func(t *testing.T) {
+		bad := strings.Replace(validF, `"capital_required": 21032000`, `"capital_required": "0.5"`, 1)
+		_, reason := Parse(json.RawMessage("[" + bad + "]"))
+		if reason == "" || !strings.Contains(reason, "capital_required") || !strings.Contains(reason, "plain integers") {
+			t.Fatalf("want integer-typed rejection, got %q", reason)
+		}
+	})
+	t.Run("expression still rejected", func(t *testing.T) {
+		bad := strings.Replace(validF, `"per_cycle_gp": 440000`, `"per_cycle_gp": "11000*40"`, 1)
+		_, reason := Parse(json.RawMessage("[" + bad + "]"))
+		if reason == "" || !strings.Contains(reason, "per_cycle_gp") {
+			t.Fatalf("want rejection naming per_cycle_gp, got %q", reason)
+		}
+	})
+}
