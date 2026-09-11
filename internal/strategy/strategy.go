@@ -17,7 +17,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -182,25 +184,154 @@ const (
 	MinBEntryPriceGp = 10_000_000
 )
 
-// Parse decodes the raw strategies array strictly (unknown fields and
-// string-where-number both fail) and validates it. The returned string is a
-// field-precise rejection reason for the model, "" when valid.
+// Parse decodes the raw strategies array strictly (unknown fields fail) and
+// validates it. The returned string is a field-precise rejection reason for
+// the model, "" when valid.
+//
+// Numeric fields written as quoted numeric strings ("0.5", "400000",
+// "6,000,000") are coerced before the strict decode. The value is
+// unambiguous, and rejecting it did real damage: MiniMax writes
+// checks_per_hour as a string often enough that the rejection → resubmit
+// loop burned whole runs (Aug 6 and Sep 11 2026 — run 1183 resubmitted the
+// same field 40 times). Genuinely non-numeric text ("2 per hour",
+// "6,000,000 gp", "limit*margin") is still rejected, with a hint that matches
+// the field's actual type.
 func Parse(raw json.RawMessage) ([]Strategy, string) {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var list []Strategy
-	if err := dec.Decode(&list); err != nil {
-		var typeErr *json.UnmarshalTypeError
-		if ok := isTypeError(err, &typeErr); ok {
-			return nil, fmt.Sprintf("strategies: field %q must be %s, got %s — plain integers only, no expressions, no commas, no units", typeErr.Field, typeErr.Type, typeErr.Value)
+	// Each pass surfaces the decoder's first type error; when it is a quoted
+	// number, fix that field everywhere in the array and decode again. The
+	// bound only matters if the model quoted many distinct fields.
+	for pass := 0; pass < 16; pass++ {
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		var list []Strategy
+		err := dec.Decode(&list)
+		if err == nil {
+			if reason := Validate(list, time.Now().UTC()); reason != "" {
+				return nil, reason
+			}
+			return list, ""
 		}
-		return nil, "strategies: invalid JSON: " + err.Error()
+		var typeErr *json.UnmarshalTypeError
+		if !isTypeError(err, &typeErr) {
+			return nil, "strategies: invalid JSON: " + err.Error()
+		}
+		if typeErr.Value == "string" && isNumericKind(typeErr.Type.Kind()) {
+			if fixed, changed := coerceNumericStrings(raw, strings.Split(typeErr.Field, ".")); changed {
+				raw = fixed
+				continue
+			}
+		}
+		return nil, typeErrorReason(typeErr)
 	}
-	if reason := Validate(list, time.Now().UTC()); reason != "" {
-		return nil, reason
-	}
-	return list, ""
+	return nil, "strategies: too many quoted numbers to repair — write every numeric field as an unquoted JSON number"
 }
+
+// typeErrorReason words the rejection for the field's real type: the old
+// one-size hint ("plain integers only") told the model the opposite of the
+// truth for fractional fields like attention_spec.checks_per_hour.
+func typeErrorReason(typeErr *json.UnmarshalTypeError) string {
+	switch k := typeErr.Type.Kind(); {
+	case k == reflect.Float32 || k == reflect.Float64:
+		return fmt.Sprintf("strategies: field %q must be a number, got %s — write an unquoted JSON number, decimals allowed (0.5, not \"0.5\"); no expressions, no units", typeErr.Field, typeErr.Value)
+	case isNumericKind(k):
+		return fmt.Sprintf("strategies: field %q must be an integer, got %s — plain integers only: unquoted, no expressions, no commas, no units", typeErr.Field, typeErr.Value)
+	default:
+		return fmt.Sprintf("strategies: field %q must be %s, got %s", typeErr.Field, typeErr.Type, typeErr.Value)
+	}
+}
+
+func isNumericKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	}
+	return false
+}
+
+// coerceNumericStrings rewrites quoted numeric strings at the given field
+// path (the decoder's dotted path, array indices omitted, so every element
+// is visited) into bare JSON numbers. Returns the rewritten document and
+// whether anything changed; unchanged input means the string at that path is
+// not a number and the caller should reject.
+func coerceNumericStrings(raw json.RawMessage, path []string) (json.RawMessage, bool) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber() // keep every existing number byte-for-byte
+	var tree any
+	if err := dec.Decode(&tree); err != nil {
+		return raw, false
+	}
+	if !coerceAt(tree, path) {
+		return raw, false
+	}
+	out, err := json.Marshal(tree)
+	if err != nil {
+		return raw, false
+	}
+	return out, true
+}
+
+func coerceAt(node any, path []string) bool {
+	switch n := node.(type) {
+	case []any:
+		changed := false
+		for _, el := range n {
+			if coerceAt(el, path) {
+				changed = true
+			}
+		}
+		return changed
+	case map[string]any:
+		if len(path) == 0 {
+			return false
+		}
+		child, ok := n[path[0]]
+		if !ok {
+			return false
+		}
+		if len(path) > 1 {
+			return coerceAt(child, path[1:])
+		}
+		switch leaf := child.(type) {
+		case string:
+			if num, ok := parseQuotedNumber(leaf); ok {
+				n[path[0]] = num
+				return true
+			}
+		case []any: // a numeric slice field written as ["1", "2"]
+			changed := false
+			for i, el := range leaf {
+				if s, ok := el.(string); ok {
+					if num, ok := parseQuotedNumber(s); ok {
+						leaf[i] = num
+						changed = true
+					}
+				}
+			}
+			return changed
+		}
+	}
+	return false
+}
+
+// parseQuotedNumber accepts what a person would unambiguously read as one
+// number: optional sign, digits with optional thousands separators, optional
+// decimal part, optional exponent. Anything else (units, expressions, ranges)
+// is left for the rejection path.
+func parseQuotedNumber(s string) (json.Number, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" || !quotedNumberRe.MatchString(s) {
+		return "", false
+	}
+	s = strings.NewReplacer(",", "", "_", "").Replace(s)
+	if _, err := strconv.ParseFloat(s, 64); err != nil {
+		return "", false
+	}
+	return json.Number(s), true
+}
+
+var quotedNumberRe = regexp.MustCompile(`^[+-]?\d[\d,_]*(\.\d+)?([eE][+-]?\d+)?$`)
 
 // ParseSignalVerdicts decodes and validates the optional signal_verdicts
 // array. Returns nil for absent/empty input.

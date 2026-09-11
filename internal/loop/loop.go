@@ -50,7 +50,11 @@ var submitReportDef = json.RawMessage(`{
             "exit_price": {"type": "integer", "description": "the sell target in gp (plain integer). For C: post-tax output revenue per conversion"},
             "kill_price": {"type": ["integer","null"], "description": "price of items[0] beyond which the strategy is dead; null only where the archetype allows (required for B, V, U)"},
             "horizon": {"type": "string", "description": "expected hold / cycle time in words (B: the turnaround estimate)"},
-            "attention": {"type": "string", "description": "REQUIRED for F and B: the execution contract — offer cadence, longest safe unattended window, reaction risk. The operator decides what fits their day"},
+            "attention": {"type": "string", "description": "REQUIRED for F, B, C: the execution contract — offer cadence, longest safe unattended window, reaction risk. The operator decides what fits their day"},
+            "attention_spec": {"type": ["object","null"], "description": "REQUIRED for F, B, C: the attention contract as two JSON numbers (NOT quoted strings), agreeing with the attention prose", "properties": {
+              "checks_per_hour": {"type": "number", "description": "GE visits per hour while running, > 0 and <= 12; fractional means less than hourly (0.25 = one check every 4h). Write 0.5, not \"0.5\""},
+              "max_unattended_hours": {"type": "number", "description": "longest safe unattended window in hours, > 0 and <= 168"}
+            }, "required": ["checks_per_hour","max_unattended_hours"]},
             "capital_required": {"type": "integer", "description": "gp, plain integer; must fit the 50M research budget on its own (per-opportunity, not a shared pool)"},
             "size": {"type": "object", "properties": {
               "buy_limit": {"type": "integer"}, "vol_constrained": {"type": "integer"}, "units_used": {"type": "integer"}
@@ -156,9 +160,14 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 	// extension the first time a submit is rejected, so a rejection landing
 	// near the turn budget doesn't throw away the entire cycle's research.
 	const graceTurns = 4
+	// The same rejection three times running means the model is not acting
+	// on the hint — run 1183 (2026-09-11) resubmitted one malformed field 40
+	// times and burned the grace plus half the budget on it. Stop paying.
+	const maxSameRejections = 3
 	nudges := 0
 	maxTurns := cfg.MaxTurns
 	graceGranted := false
+	lastReject, sameRejects := "", 0
 	stats := report.RunStats{RunStartedAt: runStart, Outcome: "failed"}
 	for turn := 1; turn <= maxTurns; turn++ {
 		sendable, prunedBytes := pruneHistory(history, cfg.PruneKeepTurns)
@@ -203,12 +212,26 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 					return path, nil
 				}
 				log.Printf("report rejected: %s", gateErr)
+				if gateErr == lastReject {
+					sameRejects++
+				} else {
+					lastReject, sameRejects = gateErr, 1
+				}
+				if sameRejects >= maxSameRejections {
+					stats.PerTurn = append(stats.PerTurn, turnStat)
+					return failRun(reportPath, bridge, &stats, fmt.Errorf("report rejected %d times in a row for the same reason: %s", sameRejects, gateErr))
+				}
 				if !graceGranted {
 					graceGranted = true
 					maxTurns += graceTurns
 					log.Printf("grace: +%d turns to fix the rejected report (budget now %d)", graceTurns, maxTurns)
 				}
-				results = append(results, llm.ToolResult(tu.ID, `{"error":{"code":"invalid_report","reason":"`+gateErr+` -- fix ONLY the named field and resubmit; do not re-run research"}}`, true))
+				hint := gateErr + " -- fix ONLY the named field and resubmit; do not re-run research"
+				if sameRejects > 1 {
+					hint = "SAME REJECTION AS YOUR PREVIOUS ATTEMPT -- your fix did not take. Change the named field's value in the JSON you send, then resubmit. " + hint
+				}
+				payload, _ := json.Marshal(map[string]any{"error": map[string]string{"code": "invalid_report", "reason": hint}})
+				results = append(results, llm.ToolResult(tu.ID, string(payload), true))
 				continue
 			}
 			text, isErr, err := bridge.Call(ctx, tu.Name, tu.Input)
