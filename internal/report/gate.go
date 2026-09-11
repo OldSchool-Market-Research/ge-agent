@@ -93,12 +93,12 @@ func appendix(calls []mcpbridge.CallRecord) string {
 	b.WriteString("Numbers in the Proof section that do not appear in a result below were not returned by any tool.\n\n")
 	for _, c := range calls {
 		fmt.Fprintf(&b, "### call %d — `%s` (%s, %s)\n\n", c.Seq, c.Tool, c.At.Format(time.RFC3339), c.Duration)
-		fmt.Fprintf(&b, "params:\n```json\n%s\n```\n", string(c.Args))
+		fmt.Fprintf(&b, "params:\n%s\n", fenceJSON(string(c.Args)))
 		label := "result"
 		if c.IsError {
 			label = "result (tool error)"
 		}
-		fmt.Fprintf(&b, "%s:\n```json\n%s\n```\n\n", label, truncate(c.Result, 4000))
+		fmt.Fprintf(&b, "%s:\n%s\n\n", label, fenceJSON(truncate(c.Result, 4000)))
 	}
 	return b.String()
 }
@@ -108,4 +108,36 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + fmt.Sprintf("\n… (truncated, %d bytes total)", len(s))
+}
+
+// fenceJSON wraps content (tool Args/Result — ultimately sourced from
+// ge-mcp/DB data such as item names, not validated as safe markdown) in a
+// ```json fence sized to actually contain it. A fence delimiter must be
+// longer than any run of backticks inside the content or the content breaks
+// out of the fence, so this picks a delimiter one backtick longer than the
+// longest run present (minimum three, per CommonMark) instead of hard-coding
+// three backticks.
+func fenceJSON(content string) string {
+	delim := strings.Repeat("`", fenceLen(content))
+	return delim + "json\n" + content + "\n" + delim
+}
+
+// fenceLen returns the shortest backtick-fence length (>= 3) guaranteed not
+// to be prematurely closed by any backtick run already in content.
+func fenceLen(content string) int {
+	longest, run := 0, 0
+	for _, r := range content {
+		if r == '`' {
+			run++
+			if run > longest {
+				longest = run
+			}
+		} else {
+			run = 0
+		}
+	}
+	if n := longest + 1; n > 3 {
+		return n
+	}
+	return 3
 }
