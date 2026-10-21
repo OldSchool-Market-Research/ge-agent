@@ -447,9 +447,9 @@ harness could paper-trade it mechanically.
   attention:        <REQUIRED for F, B, C: offer cadence, longest safe unattended window, reaction risk>
   attention_spec:   {checks_per_hour: <number>, max_unattended_hours: <number>}  # REQUIRED for F, B, C — the attention contract as numbers, agreeing with the prose; fractional checks_per_hour = less than hourly (0.25 = every 4h)
   capital_required: <gp to run one full cycle at target size; ≤ the research budget on its own>
-  size:
-    buy_limit:      <units / 4h (tightest leg for C)>
-    vol_constrained:<units fillable at ~15% share of the RELEVANT volume>
+  size:             # C: all three count CONVERSIONS, not items
+    buy_limit:      <units / 4h; C: combo_quote's units_bound_per_4h = the tightest buy leg's limit / its qty (3-dose limit 2000, 4 per conversion = 500)>
+    vol_constrained:<units fillable at ~15% share of the RELEVANT volume; C: in conversions>
     units_used:     <min of the two>
   expected_value:
     per_cycle_gp:   <post-tax; F: one 4h buy-limit cycle, MUST be ≥ 400,000; C: one 4h batch at budget size, MUST be ≥ 200,000>

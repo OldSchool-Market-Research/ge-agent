@@ -594,8 +594,12 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 		}
 		var buys, sells int
 		itemIDs := map[int]bool{}
+		buyLimits := map[int]int64{}
 		for _, it := range s.Items {
 			itemIDs[it.ID] = true
+			if it.BuyLimit != nil {
+				buyLimits[it.ID] = *it.BuyLimit
+			}
 		}
 		for j, l := range s.Legs {
 			lp := func(field, problem string) string {
@@ -615,6 +619,15 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 			}
 			if !itemIDs[l.ItemID] {
 				return lp("item_id", "every leg item must also appear in items")
+			}
+			// size.units_used counts conversions and each one buys qty of
+			// this leg, so the leg's 4h buy limit allows limit/qty of them.
+			// Reading the per-item limit as conversions ran 4-for-3 decants
+			// at 4x their real size.
+			if lim := buyLimits[l.ItemID]; l.Side == "buy" && lim > 0 && l.Qty*s.Size.UnitsUsed > lim {
+				return lp("qty", fmt.Sprintf(
+					"%d per conversion x size.units_used %d = %d %s per 4h, over its buy limit of %d; size.units_used counts conversions, so it can be at most %d (combo_quote's units_bound_per_4h)",
+					l.Qty, s.Size.UnitsUsed, l.Qty*s.Size.UnitsUsed, l.Name, lim, lim/l.Qty))
 			}
 			if l.Side == "buy" {
 				buys++
