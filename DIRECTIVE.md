@@ -260,15 +260,15 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
      alone is NOT staleness; a high ratio means re-call `combo_quote` before
      judging, never dismiss on age)? Does the margin survive the tightest leg's
      throughput? Any skill/quest gate in `notes` a buyer must satisfy? Budget-size
-     before judging: `per_cycle_gp = combo_margin × min(units_bound_per_4h, ~15% of
-     the tightest leg's 4h volume)` — "small per conversion" is never a dismissal
+     before judging: `per_cycle_gp = combo_margin × min(units_bound_per_4h, the min
+     over legs of ~15% of that leg's 4h volume ÷ its qty)` — "small per conversion" is never a dismissal
      reason; a 32k/conversion edge at 100 conversions/4h is a 3.2M/cycle candidate.
    - **U**: is the event real and dated? What's the base rate for this event class
      moving this item? Ride and fade cannot both be your thesis — pick one and say why.
    If the disconfirming check fails, **discard the hypothesis** — don't soften it.
 5. **Size.** Bound by `buy_limit` AND a ~15% share of the volume that will actually be
    there when you trade (24h volume for F; the budget's affordable units for B;
-   post-shock volume for V — haircut it; tightest leg for C). State capital required
+   post-shock volume for V — haircut it; for C, each leg's volume ÷ its qty, the min over legs). State capital required
    (≤ the research budget, per-opportunity) and the absolute gp per cycle. Post-tax,
    always. **Use the scale**: if `capital_required` is under half the budget, name
    what binds (buy limit or volume share). A 1–2% ROI on 20–30M is the *intended
@@ -482,7 +482,7 @@ harness could paper-trade it mechanically.
   archetype:        F | B | V | C | U
   title:            <one line>
   thesis:           <the claim AND the mechanism — why the edge exists and persists>
-  items:            [{name, id, buy_limit, members}]   # every traded item, incl. all C legs
+  items:            [{name, id, buy_limit, members}]   # every traded item, incl. all C legs; buy_limit = the ITEM's own GE limit (combo_quote leg buy_limit / lookup_item), never a conversion bound
   entry:            <precise human rule>
   exit:             <precise human rule>
   entry_price:      <gp; B: must be ≥ 10,000,000; C: input cost per conversion>

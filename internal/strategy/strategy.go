@@ -593,6 +593,11 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 			return p("relation_id", "must be a positive id from list_relations")
 		}
 		var buys, sells int
+		// the tightest buy leg's conversion bound (combo_quote's
+		// units_bound_per_4h); -1 until a buy leg with a known limit is seen
+		bound := int64(-1)
+		var tightName string
+		var tightQty, tightLim int64
 		itemIDs := map[int]bool{}
 		buyLimits := map[int]int64{}
 		for _, it := range s.Items {
@@ -620,14 +625,10 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 			if !itemIDs[l.ItemID] {
 				return lp("item_id", "every leg item must also appear in items")
 			}
-			// size.units_used counts conversions and each one buys qty of
-			// this leg, so the leg's 4h buy limit allows limit/qty of them.
-			// Reading the per-item limit as conversions ran 4-for-3 decants
-			// at 4x their real size.
-			if lim := buyLimits[l.ItemID]; l.Side == "buy" && lim > 0 && l.Qty*s.Size.UnitsUsed > lim {
-				return lp("qty", fmt.Sprintf(
-					"%d per conversion x size.units_used %d = %d %s per 4h, over its buy limit of %d; size.units_used counts conversions, so it can be at most %d (combo_quote's units_bound_per_4h)",
-					l.Qty, s.Size.UnitsUsed, l.Qty*s.Size.UnitsUsed, l.Name, lim, lim/l.Qty))
+			if lim := buyLimits[l.ItemID]; l.Side == "buy" && lim > 0 {
+				if b := lim / l.Qty; bound < 0 || b < bound {
+					bound, tightName, tightQty, tightLim = b, l.Name, l.Qty, lim
+				}
 			}
 			if l.Side == "buy" {
 				buys++
@@ -638,11 +639,35 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 		if buys == 0 || sells == 0 {
 			return p("legs", "must contain at least one buy leg and one sell leg")
 		}
+		// size.units_used counts conversions and each one buys qty of every
+		// buy leg, so the tightest leg's 4h buy limit allows limit/qty of them.
+		// Reading the per-item limit as conversions ran 4-for-3 decants at 4x
+		// their real size. The rejection names size.units_used, never a leg:
+		// the recipe is fixed by relation_id, the size is what's wrong. An
+		// unknown limit (items[].buy_limit null) fails open; the orchestrator's
+		// ship-time vet re-checks against the items table.
+		if bound == 0 {
+			return p("size.units_used", fmt.Sprintf(
+				"each conversion buys %d %s but its buy limit is %d per 4h: this conversion is untradeable within the buy limit — drop the strategy",
+				tightQty, tightName, tightLim))
+		}
+		if bound > 0 && s.Size.UnitsUsed > bound {
+			return p("size.units_used", fmt.Sprintf(
+				"must be at most %d: each conversion buys %d %s and its buy limit is %d per 4h (combo_quote's units_bound_per_4h). Leave legs unchanged; set size.units_used to at most %d and rescale size.buy_limit, size.vol_constrained, capital_required and expected_value to that many conversions. If (exit_price - entry_price) x %d is under %d, drop the strategy instead",
+				bound, tightQty, tightName, tightLim, bound, bound, FloorCPerCycleGp))
+		}
 		if s.EntryPrice >= s.ExitPrice {
 			return p("entry_price", "must be below exit_price for archetype C (entry_price = input cost per conversion, exit_price = post-tax output revenue)")
 		}
 		if s.ExpectedValue.PerCycleGp < FloorCPerCycleGp {
 			return p("expected_value.per_cycle_gp", fmt.Sprintf("must be >= %d for archetype C — below the floor does not ship, dismiss it instead (budget-size the batch first: margin x conversions/4h, not margin x 1)", FloorCPerCycleGp))
+		}
+		// the floor on the numbers themselves, not the claim: a resized
+		// units_used with a stale per_cycle_gp must not slip under it
+		if margin := s.ExitPrice - s.EntryPrice; margin*s.Size.UnitsUsed < FloorCPerCycleGp {
+			return p("size.units_used", fmt.Sprintf(
+				"(exit_price - entry_price) x size.units_used = %d x %d = %d gp per 4h batch, under the C floor of %d: below the floor does not ship, dismiss it instead",
+				margin, s.Size.UnitsUsed, margin*s.Size.UnitsUsed, FloorCPerCycleGp))
 		}
 		if strings.TrimSpace(s.Attention) == "" {
 			return p("attention", "required for archetype C — batch cadence (offers + conversion time), longest safe unattended window, reaction risk")
