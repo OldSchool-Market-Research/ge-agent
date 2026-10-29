@@ -160,13 +160,13 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 | `liquidity(name_or_id, window)` | summed recent 5m volume for sizing |
 | `lookup_item(query, limit)` | resolve a name → id (+ `buy_limit`, `members`) |
 
-**Processing (report section 6 only, never a strategy):**
+**Processing (report section 6 only, never a strategy; 2 calls per run):**
 
 | Tool | Use it to… |
 |---|---|
-| `process_top(window, metric, min_coverage_pct, limit)` | **the processing opener**: recipes that paid *consistently* over the window (median, p25, % hours positive, hours in the top 10, last-24h vs window avg) from hourly snapshots |
-| `process_screen(category?, sort, limit)` | live gp/hr of every processing recipe (player-time money-makers: planks, keels, potions, crates…), capped by player speed, buy limits and market volume |
-| `process_quote(recipe)` / `process_history(recipe, window, bucket)` | one recipe's legs, notes and caveats / its trend — only for a recipe you're about to call out |
+| `process_top(window, metric, min_coverage_pct, limit)` | recipes that paid *consistently* over the window (median, p25, % hours positive, hours in the top 10, last-24h vs window avg) from hourly snapshots |
+| `process_screen(category?, throughput?, sort, limit)` | live gp/hr of every processing recipe (player-time money-makers: planks, keels, potions, crates…) with the rates that cap it: `effective_actions_per_hour` vs `actions_per_hour` / `limit_actions_per_hour` / `market_actions_per_hour` |
+| `process_quote(recipe)` / `process_history(recipe, …)` | one recipe's legs + notes / its trend — not needed for the watch |
 
 ---
 
@@ -427,25 +427,40 @@ lessons instead of prose. This is evidence the run was skeptical, not just a hyp
 reel — and it stops the next run re-chasing the same ghosts: your dismissal reason
 is stored and shown verbatim to future runs as the candidate's obituary.
 
----
-
 ### 6. Processing watch
 Processing recipes are player-time money-makers (the operator clicks through
 them: planks, keels, potions, crates). The harness can't paper-trade player
-time, so they are **never strategies** — never in the strategies array. This
-section is where you evaluate them and make calls:
-- **One `process_top(window=7d, limit=10)` call** (plus at most one
-  `process_screen` / `process_quote` if something needs checking). No more:
-  this section is a lens, not the run.
-- A short table of the top 5 by median gp/hr: recipe, median, p25, % hours
-  positive, what caps it (player speed / buy limit / market volume).
-- Your calls, 1–3 lines: which look **rising** or **fading** (avg_last_24h vs
-  avg), which are **steady earners** (high p25, % positive near 100), and any
-  you'd **avoid** (thin market, unknown buy limits, stale legs). Say *why*
-  from the numbers; skill/quest requirements aren't curated, so note any you
-  know of.
-- If the tools return `process_unavailable` or no history yet, write one line
-  saying so and move on.
+time, so they are **never strategies** and **never candidates**: not in the
+strategies array, not in the Header's scanned/survived counts, not the
+Digest's largest-gp line, not in Discarded. A player's gp/hr while clicking
+can't be compared with a strategy's passive gp/day, so a big recipe number
+says nothing about your F/C/B work. If `process_quote` shows a
+`relation_name`, that conversion is also a C relation: it ships only through
+the C lane (combo_screen / combo_quote numbers, relation_id from those tools).
+A recipe_id is never a relation_id, and no process_* number goes into a
+strategy.
+
+- **Exactly two calls, after your strategy research, in the same turn as
+  your final ship-time quote** (they aren't strategy calls, so they don't
+  break the last-two-calls rule): `process_top(window=7d, limit=10)` and
+  `process_screen(limit=25)`. Write this section from those two results; don't
+  call more process_* tools.
+- A table of the top 5 by median gp/hr from `process_top`: recipe, median,
+  p25, % hours positive, and what caps it, taken from the matching
+  `process_screen` row: the rate among `actions_per_hour` (player speed),
+  `limit_actions_per_hour` (buy limit) and `market_actions_per_hour` (market
+  volume) that equals `effective_actions_per_hour`. Write "—" if the recipe
+  isn't in the screen rows. Never infer a cap.
+- **Read `hours` first.** If the top rows have fewer than ~48 hours of
+  history, write one line saying how old the history is and make no
+  rising/fading/steady calls. Otherwise, 1–3 lines of calls: **rising** or
+  **fading** (avg_last_24h vs avg), **steady earners** (high p25, %
+  positive near 100), and any to **avoid** (`unknown_limit_legs > 0`, a thin
+  market rate, a stale `max_leg_age_s`). Say *why* from the numbers.
+  Requirements: cite only what a tool returned; mark anything from general
+  knowledge "(unverified)".
+- If the tools return `process_unavailable` or no rows, write one line saying
+  so and move on.
 
 ---
 
