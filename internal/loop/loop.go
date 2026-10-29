@@ -25,11 +25,11 @@ const submitReportTool = "submit_report"
 
 var submitReportDef = json.RawMessage(`{
   "name": "submit_report",
-  "description": "Submit the run's final markdown report plus the machine-readable strategy objects. Call exactly once, at the end. The harness validates the required sections (Header, Digest, Strategies, Proof, Discarded — in order), the strategies array, and signal_verdicts, writes the file with a UTC timestamp name, and appends the authoritative tool-call log. Do not include the appendix yourself.",
+  "description": "Submit the run's final markdown report plus the machine-readable strategy objects. Call exactly once, at the end. The harness validates the required sections (Header, Digest, Strategies, Proof, Discarded — in order; the Processing watch section after them is not validated), the strategies array, and signal_verdicts, writes the file with a UTC timestamp name, and appends the authoritative tool-call log. Do not include the appendix yourself.",
   "input_schema": {
     "type": "object",
     "properties": {
-      "markdown": {"type": "string", "description": "The complete report markdown, all five sections in order"},
+      "markdown": {"type": "string", "description": "The complete report markdown: Header, Digest, Strategies, Proof, Discarded (validated, in order), then the Processing watch section"},
       "strategies": {
         "type": "array",
         "description": "Machine-readable strategy objects, one per shipped strategy — the authoritative copy downstream systems ingest (the markdown Strategies section is the human view; the two must agree). An EMPTY array is valid: ship nothing when nothing clears the bar (the Discarded section carries the evidence). ALL gp/unit fields must be plain integers: no expressions, no commas, no units. Kind-specific required fields: F needs attention + per_cycle_gp >= 400000; B needs attention+kill_price + entry_price >= 10000000; V needs trigger+direction+kill_price; C needs legs+relation_id; U needs event+direction+kill_price. S and H are retired — do not ship them. Fields belonging to another archetype are rejected.",
