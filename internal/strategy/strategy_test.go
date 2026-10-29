@@ -472,6 +472,58 @@ func TestCKindRules(t *testing.T) {
 			t.Fatalf("got %q", reason)
 		}
 	})
+	t.Run("units_used read as potions rejected", func(t *testing.T) {
+		// 2000 conversions x 4 three-dose = 8000 per 4h against a limit of
+		// 2000: the per-item limit copied into units_used as if it were
+		// conversions (strategies 1606/1724 ran at 4x their real size)
+		m, rerun := parseOne(t, validC)
+		m["size"] = map[string]any{"buy_limit": 2000, "vol_constrained": 2000, "units_used": 2000}
+		reason := rerun(m)
+		// names the size, never a leg (the recipe is fixed by relation_id)
+		if !strings.Contains(reason, "size.units_used: must be at most 500") || strings.Contains(reason, "legs[") ||
+			!strings.Contains(reason, "Leave legs unchanged") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("tightest of several buy legs is the bound", func(t *testing.T) {
+		// a set-style recipe: two buy legs, limits 2000/4 = 500 and 8/1 = 8
+		m, rerun := parseOne(t, validC)
+		m["items"] = append(m["items"].([]any), map[string]any{"name": "Rare piece", "id": 777, "buy_limit": 8, "members": true})
+		m["legs"] = append(m["legs"].([]any), map[string]any{"item_id": 777, "name": "Rare piece", "side": "buy", "qty": 1, "price": 1})
+		m["size"] = map[string]any{"buy_limit": 200, "vol_constrained": 200, "units_used": 200}
+		if reason := rerun(m); !strings.Contains(reason, "at most 8:") || !strings.Contains(reason, "Rare piece") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("limit below qty says drop it", func(t *testing.T) {
+		m, rerun := parseOne(t, validC)
+		m["items"].([]any)[0].(map[string]any)["buy_limit"] = 3 // 3 < 4 per conversion
+		if reason := rerun(m); !strings.Contains(reason, "untradeable within the buy limit") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("resized below the floor with a stale claim rejected", func(t *testing.T) {
+		// 918 gp/conversion x 200 = 183,600 < 200,000, per_cycle_gp left at 459,000
+		m, rerun := parseOne(t, validC)
+		m["size"] = map[string]any{"buy_limit": 200, "vol_constrained": 200, "units_used": 200}
+		if reason := rerun(m); !strings.Contains(reason, "under the C floor") {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("units_used at the conversion bound accepted", func(t *testing.T) {
+		m, rerun := parseOne(t, validC) // 500 x 4 = 2000, exactly the limit
+		if reason := rerun(m); reason != "" {
+			t.Fatalf("got %q", reason)
+		}
+	})
+	t.Run("unknown buy limit fails open", func(t *testing.T) {
+		m, rerun := parseOne(t, validC)
+		m["items"].([]any)[0].(map[string]any)["buy_limit"] = nil
+		m["size"] = map[string]any{"buy_limit": 2000, "vol_constrained": 2000, "units_used": 2000}
+		if reason := rerun(m); reason != "" {
+			t.Fatalf("an unknown limit must fail open, got %q", reason)
+		}
+	})
 }
 
 func TestUKindRules(t *testing.T) {

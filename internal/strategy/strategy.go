@@ -593,9 +593,18 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 			return p("relation_id", "must be a positive id from list_relations")
 		}
 		var buys, sells int
+		// the tightest buy leg's conversion bound (combo_quote's
+		// units_bound_per_4h); -1 until a buy leg with a known limit is seen
+		bound := int64(-1)
+		var tightName string
+		var tightQty, tightLim int64
 		itemIDs := map[int]bool{}
+		buyLimits := map[int]int64{}
 		for _, it := range s.Items {
 			itemIDs[it.ID] = true
+			if it.BuyLimit != nil {
+				buyLimits[it.ID] = *it.BuyLimit
+			}
 		}
 		for j, l := range s.Legs {
 			lp := func(field, problem string) string {
@@ -616,6 +625,11 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 			if !itemIDs[l.ItemID] {
 				return lp("item_id", "every leg item must also appear in items")
 			}
+			if lim := buyLimits[l.ItemID]; l.Side == "buy" && lim > 0 {
+				if b := lim / l.Qty; bound < 0 || b < bound {
+					bound, tightName, tightQty, tightLim = b, l.Name, l.Qty, lim
+				}
+			}
 			if l.Side == "buy" {
 				buys++
 			} else {
@@ -625,11 +639,38 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 		if buys == 0 || sells == 0 {
 			return p("legs", "must contain at least one buy leg and one sell leg")
 		}
+		// size.units_used counts conversions and each one buys qty of every
+		// buy leg, so the tightest leg's 4h buy limit allows limit/qty of them.
+		// Reading the per-item limit as conversions ran 4-for-3 decants at 4x
+		// their real size. The rejection names size.units_used, never a leg:
+		// the recipe is fixed by relation_id, the size is what's wrong. An
+		// unknown limit (items[].buy_limit null) fails open; the orchestrator's
+		// ship-time vet re-checks against the items table.
+		// Untradeable and below-floor are judged on the strategy, not a field:
+		// the only fix is dropping it, and naming a field would steer the model
+		// to keep editing it ("fix ONLY the named field") between rejections.
+		if bound == 0 {
+			return fmt.Sprintf(
+				"strategies[%d]: each conversion buys %d %s but its buy limit is %d per 4h, so this conversion is untradeable within the buy limit. Remove this strategy from strategies and list it under Discarded; do not change size.units_used",
+				i, tightQty, tightName, tightLim)
+		}
+		if bound > 0 && s.Size.UnitsUsed > bound {
+			return p("size.units_used", fmt.Sprintf(
+				"must be at most %d: each conversion buys %d %s and its buy limit is %d per 4h (combo_quote's units_bound_per_4h). Leave legs unchanged; set size.units_used to at most %d and rescale size.buy_limit, size.vol_constrained, capital_required and expected_value to that many conversions. If (exit_price - entry_price) x %d is under %d, drop the strategy instead",
+				bound, tightQty, tightName, tightLim, bound, bound, FloorCPerCycleGp))
+		}
 		if s.EntryPrice >= s.ExitPrice {
 			return p("entry_price", "must be below exit_price for archetype C (entry_price = input cost per conversion, exit_price = post-tax output revenue)")
 		}
 		if s.ExpectedValue.PerCycleGp < FloorCPerCycleGp {
 			return p("expected_value.per_cycle_gp", fmt.Sprintf("must be >= %d for archetype C — below the floor does not ship, dismiss it instead (budget-size the batch first: margin x conversions/4h, not margin x 1)", FloorCPerCycleGp))
+		}
+		// the floor on the numbers themselves, not the claim: a resized
+		// units_used with a stale per_cycle_gp must not slip under it
+		if margin := s.ExitPrice - s.EntryPrice; margin*s.Size.UnitsUsed < FloorCPerCycleGp {
+			return fmt.Sprintf(
+				"strategies[%d]: (exit_price - entry_price) x size.units_used = %d x %d = %d gp per 4h batch, under the C floor of %d. Below the floor does not ship: remove this strategy from strategies and list it under Discarded; do not change size.units_used",
+				i, margin, s.Size.UnitsUsed, margin*s.Size.UnitsUsed, FloorCPerCycleGp)
 		}
 		if strings.TrimSpace(s.Attention) == "" {
 			return p("attention", "required for archetype C — batch cadence (offers + conversion time), longest safe unattended window, reaction risk")
