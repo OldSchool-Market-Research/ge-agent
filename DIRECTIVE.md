@@ -434,15 +434,17 @@ time, so they are **never strategies** and **never candidates**: not in the
 strategies array, not in the Header's scanned/survived counts, not the
 Digest's largest-gp line, not in Discarded. A player's gp/hr while clicking
 can't be compared with a strategy's passive gp/day, so a big recipe number
-says nothing about your F/C/B work. If `process_quote` shows a
-`relation_name`, that conversion is also a C relation: it ships only through
-the C lane (combo_screen / combo_quote numbers, relation_id from those tools).
+says nothing about your F/C/B work. Some recipes are the same conversion as a
+C relation (sets, godswords, GWD breakdowns): those ship only through the C
+lane, with combo_screen / combo_quote numbers and a relation_id from those
+tools.
 A recipe_id is never a relation_id, and no process_* number goes into a
 strategy.
 
 - **Exactly two calls, after your strategy research, in the same turn as
   your final ship-time quote** (they aren't strategy calls, so they don't
-  break the last-two-calls rule): `process_top(window=7d, limit=10)` and
+  break the last-two-calls rule), or as your last calls before
+  submit_report if nothing ships: `process_top(window=7d, limit=10)` and
   `process_screen(limit=25)`. Write this section from those two results; don't
   call more process_* tools.
 - A table of the top 5 by median gp/hr from `process_top`: recipe, median,
