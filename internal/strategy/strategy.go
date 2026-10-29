@@ -646,10 +646,13 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 		// the recipe is fixed by relation_id, the size is what's wrong. An
 		// unknown limit (items[].buy_limit null) fails open; the orchestrator's
 		// ship-time vet re-checks against the items table.
+		// Untradeable and below-floor are judged on the strategy, not a field:
+		// the only fix is dropping it, and naming a field would steer the model
+		// to keep editing it ("fix ONLY the named field") between rejections.
 		if bound == 0 {
-			return p("size.units_used", fmt.Sprintf(
-				"each conversion buys %d %s but its buy limit is %d per 4h: this conversion is untradeable within the buy limit — drop the strategy",
-				tightQty, tightName, tightLim))
+			return fmt.Sprintf(
+				"strategies[%d]: each conversion buys %d %s but its buy limit is %d per 4h, so this conversion is untradeable within the buy limit. Remove this strategy from strategies and list it under Discarded; do not change size.units_used",
+				i, tightQty, tightName, tightLim)
 		}
 		if bound > 0 && s.Size.UnitsUsed > bound {
 			return p("size.units_used", fmt.Sprintf(
@@ -665,9 +668,9 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 		// the floor on the numbers themselves, not the claim: a resized
 		// units_used with a stale per_cycle_gp must not slip under it
 		if margin := s.ExitPrice - s.EntryPrice; margin*s.Size.UnitsUsed < FloorCPerCycleGp {
-			return p("size.units_used", fmt.Sprintf(
-				"(exit_price - entry_price) x size.units_used = %d x %d = %d gp per 4h batch, under the C floor of %d: below the floor does not ship, dismiss it instead",
-				margin, s.Size.UnitsUsed, margin*s.Size.UnitsUsed, FloorCPerCycleGp))
+			return fmt.Sprintf(
+				"strategies[%d]: (exit_price - entry_price) x size.units_used = %d x %d = %d gp per 4h batch, under the C floor of %d. Below the floor does not ship: remove this strategy from strategies and list it under Discarded; do not change size.units_used",
+				i, margin, s.Size.UnitsUsed, margin*s.Size.UnitsUsed, FloorCPerCycleGp)
 		}
 		if strings.TrimSpace(s.Attention) == "" {
 			return p("attention", "required for archetype C — batch cadence (offers + conversion time), longest safe unattended window, reaction risk")
