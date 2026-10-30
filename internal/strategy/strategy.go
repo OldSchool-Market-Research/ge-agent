@@ -159,6 +159,9 @@ type Sidecar struct {
 	Strategies     []Strategy      `json:"strategies"`
 	SignalVerdicts []SignalVerdict `json:"signal_verdicts,omitempty"`
 	Proposals      []Proposal      `json:"proposals,omitempty"`
+	// how many proposals ParseProposals dropped: this proxy's stderr goes nowhere,
+	// and a format mistake must not read the same as having proposed nothing
+	ProposalsDropped int `json:"proposals_dropped,omitempty"`
 }
 
 // Proposal is something the agent found but can't ship: a recipe missing from

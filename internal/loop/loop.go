@@ -102,7 +102,7 @@ var submitReportDef = json.RawMessage(`{
         }, "required": ["signal_id","verdict","reason"]}
       },
       "proposals": {
-        "type": "array",
+        "type": ["array","null"],
         "description": "Optional, at most 3. Something worth the operator's attention that you can't ship: a recipe missing from item_relations, a new lane, a method change, a tool you lack. Only for something new: the brief lists what's already on file. An operator decides; nothing here trades. Each object: kind (recipe, lane, method or tool); title (one line, under 120 characters); detail (what it is and why it would pay, under 1000 characters); evidence (the tool calls and numbers from this run behind it, under 1000 characters); recipe (kind recipe only: per one conversion, as item_relations would hold it, {inputs: [{item_id, qty}], outputs: [{item_id, qty}], reversible}, integers for item_id and qty). A malformed one is dropped and never costs you the report.",
         "items": {"type": "object"}
       }
@@ -187,15 +187,12 @@ func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, 
 		return "", reason
 	}
 	proposals, dropped := strategy.ParseProposals(args.Proposals)
-	if dropped > 0 {
-		log.Printf("dropped %d malformed or excess proposal(s)", dropped)
-	}
 	if err := report.Write(reportPath, args.Markdown, audit.AuditLog()); err != nil {
 		return "", "write failed: " + err.Error()
 	}
 	if err := report.WriteSidecar(reportPath, strategy.Sidecar{
 		RunStartedAt: runStart, ReportPath: reportPath, Strategies: strategies,
-		SignalVerdicts: verdicts, Proposals: proposals,
+		SignalVerdicts: verdicts, Proposals: proposals, ProposalsDropped: dropped,
 	}); err != nil {
 		return "", "sidecar write failed: " + err.Error()
 	}

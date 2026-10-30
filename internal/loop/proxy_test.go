@@ -15,6 +15,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/osrs-ge/ge-agent/internal/mcpbridge"
+	"github.com/osrs-ge/ge-agent/internal/strategy"
 )
 
 // fakeBackend stands in for the ge-mcp bridge: every call succeeds with a
@@ -371,5 +372,29 @@ func TestProposalsSchemaStaysLoose(t *testing.T) {
 	}
 	if len(field.Items) != 1 || field.Items["type"] != "object" {
 		t.Errorf("proposals items must be a bare object, got %v", field.Items)
+	}
+}
+
+// A malformed proposal costs neither the report nor the record that it happened.
+func TestProxyCountsDroppedProposals(t *testing.T) {
+	h := testHandoff(t)
+	p := mustProxy(t, h)
+	ctx := context.Background()
+	args, _ := json.Marshal(map[string]any{"markdown": validReport, "strategies": []any{},
+		"proposals": []any{map[string]any{"kind": "lane", "title": "t", "detail": "d"}, map[string]any{"kind": "nonsense", "title": "t", "detail": "d"}}})
+	res, err := p.submit(ctx, callReq("submit_report", string(args)))
+	if err != nil || res.IsError {
+		t.Fatalf("report rejected over a proposal: %v / %s", err, resultText(t, res))
+	}
+	raw, err := os.ReadFile(strings.TrimSuffix(h.ReportPath, ".md") + ".strategies.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sc strategy.Sidecar
+	if err := json.Unmarshal(raw, &sc); err != nil {
+		t.Fatal(err)
+	}
+	if len(sc.Proposals) != 1 || sc.ProposalsDropped != 1 {
+		t.Errorf("proposals %d dropped %d, want 1 and 1", len(sc.Proposals), sc.ProposalsDropped)
 	}
 }
