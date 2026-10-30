@@ -180,6 +180,7 @@ func (p *proxy) callTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 		log.Printf("  tool %s (err=false, %d bytes) cached", req.Params.Name, len(text))
 		return mcp.NewToolResultText(text), nil
 	}
+	started := p.clock() // the data is as old as the call's start, not its end
 	text, isErr, err := p.backend.Call(ctx, req.Params.Name, args)
 	if err != nil && ctx.Err() != nil {
 		// kimi cancelled the call (its per-call tool timeout) and has already
@@ -198,7 +199,7 @@ func (p *proxy) callTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 	p.mu.Lock()
 	p.flushAuditLocked()
 	if !isErr && key != "" {
-		p.cache[key] = cachedCall{text: text, at: p.clock()}
+		p.cache[key] = cachedCall{text: text, at: started}
 	}
 	p.mu.Unlock()
 	log.Printf("  tool %s (err=%v, %d bytes)", req.Params.Name, isErr, len(text))
@@ -209,9 +210,9 @@ func (p *proxy) callTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 
 // callCacheTTL bounds how long an identical call is answered from memory.
 // prices_1m moves once a minute (the wiki's /latest is cached 60s), so a
-// repeat inside it would read the same rows. Over Oct 16-30, 28% of
-// combo_quote calls repeated one made earlier in the same run, 58% of those
-// within 60s.
+// cached answer is at most one tick behind, and the vetter re-prices every
+// ship at ingest anyway. Over Oct 16-30, 28% of combo_quote calls repeated one
+// made earlier in the same run, 58% of those within 60s.
 const callCacheTTL = 60 * time.Second
 
 type cachedCall struct {

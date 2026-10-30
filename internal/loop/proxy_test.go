@@ -316,3 +316,32 @@ func TestProxyRefusesPrecomputedScansOnlyWhenTold(t *testing.T) {
 		t.Fatal("a refused scan reached ge-mcp")
 	}
 }
+
+// slowClockBackend advances the proxy's clock while a call runs.
+type slowClockBackend struct {
+	fakeBackend
+	advance func()
+}
+
+func (s *slowClockBackend) Call(ctx context.Context, name string, args json.RawMessage) (string, bool, error) {
+	s.advance()
+	return s.fakeBackend.Call(ctx, name, args)
+}
+
+// A slow call's data is as old as the call's start: its TTL counts from there.
+func TestProxyCacheAgesFromCallStart(t *testing.T) {
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	b := &slowClockBackend{advance: func() { now = now.Add(50 * time.Second) }}
+	p, err := newProxy(b, testHandoff(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.now = func() time.Time { return now }
+	ctx := context.Background()
+	p.callTool(ctx, callReq("top_flips", `{}`)) // starts at 0s, answers at 50s
+	now = now.Add(11 * time.Second)             // 61s after it started
+	p.callTool(ctx, callReq("top_flips", `{}`))
+	if got := len(b.AuditLog()); got != 2 {
+		t.Fatalf("an entry 61s past its start must refetch: %d backend calls", got)
+	}
+}
