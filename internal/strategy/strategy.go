@@ -799,6 +799,9 @@ func deriveTitle(s Strategy) string {
 		var buys, sells []string
 		for _, l := range s.Legs {
 			name := strings.TrimSpace(l.Name)
+			if name == "" {
+				continue // an unnamed leg is the gate's to reject, not ours to print
+			}
 			if l.Qty > 1 {
 				name = fmt.Sprintf("%d × %s", l.Qty, name)
 			}
