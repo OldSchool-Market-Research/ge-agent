@@ -27,10 +27,10 @@ type RunStats struct {
 	InputTokens  int        `json:"input_tokens"`
 	OutputTokens int        `json:"output_tokens"`
 	PeakInput    int        `json:"peak_input_tokens"` // largest single turn: the live context size
-	PrunedBytes  int        `json:"pruned_bytes"`      // transcript bytes withheld by pruning, summed over sends
+	PrunedBytes  int        `json:"pruned_bytes"`      // always 0 since kimi manages its own context; kept for the orchestrator
 	PerTurn      []TurnStat `json:"per_turn"`
 	// CachedInputTokens is the share of InputTokens served from the
-	// provider's prompt cache (kimi driver; the api driver runs uncached).
+	// provider's prompt cache.
 	CachedInputTokens int `json:"cached_input_tokens,omitempty"`
 }
 

@@ -21,11 +21,10 @@ import (
 )
 
 // The kimi driver's MCP half. The Kimi CLI spawns `ge-agent -mcp-proxy` as
-// its only MCP server; the proxy fronts ge-mcp through the same mcpbridge
-// the api loop uses (so the audit log, and the report appendix built from
-// it, are identical) and serves submit_report with the api loop's gate: the
-// same validation, rejection payloads and 3-strike fail-fast. Its stdout is
-// the MCP channel — all logging goes to stderr.
+// its only MCP server; the proxy fronts ge-mcp through mcpbridge (whose
+// audit log becomes the report appendix) and serves submit_report behind the
+// report gate: validation, rejection payloads and the 3-strike fail-fast.
+// Its stdout is the MCP channel — all logging goes to stderr.
 //
 // A nudge resumes the kimi session, which spawns a fresh proxy, so whatever
 // must outlive one proxy lives in the handoff dir: the audit log (appended
@@ -43,7 +42,7 @@ const (
 	fatalSuffix = " -- the run has failed; stop now."
 )
 
-// proxyHandoff is what RunKimi tells the proxy it spawns (through kimi's
+// proxyHandoff is what Run tells the proxy it spawns (through kimi's
 // environment, which MCP servers inherit).
 type proxyHandoff struct {
 	Dir        string
@@ -149,7 +148,7 @@ func (p *proxy) server(tools []mcpbridge.ToolDef) *server.MCPServer {
 	}
 	var def mcpbridge.ToolDef
 	if err := json.Unmarshal(submitReportDef, &def); err != nil {
-		panic(err) // a compile-time constant; the api loop sends the same bytes
+		panic(err) // a compile-time constant
 	}
 	srv.AddTool(mcp.NewToolWithRawSchema(def.Name, def.Description, def.InputSchema), p.submit)
 	return srv
@@ -165,8 +164,8 @@ func (p *proxy) callTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 	}
 	text, isErr, err := p.backend.Call(ctx, req.Params.Name, args)
 	if err != nil {
-		// Same rule as the api loop: a transport-level ge-mcp failure is not
-		// something the model can fix, so the run fails.
+		// A transport-level ge-mcp failure is not something the model can fix,
+		// so the run fails.
 		reason := fmt.Sprintf("tool %s: %v", req.Params.Name, err)
 		p.finish(proxyResult{Outcome: "failed", FailReason: reason})
 		return mcp.NewToolResultError(fatalPrefix + reason + fatalSuffix), nil

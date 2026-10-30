@@ -1,8 +1,7 @@
 // ge-agent: one directive research cycle per invocation. A model drives the
 // DIRECTIVE.md loop against ge-mcp's tools; the run's durable artifact is
-// one markdown report. GE_AGENT_DRIVER picks the model loop: "api" (MiniMax-M3
-// via its Anthropic-compatible API) or "kimi" (the Kimi Code CLI, with this
-// binary re-run as its MCP proxy: -mcp-proxy).
+// one markdown report. The model loop is the Kimi Code CLI, with this binary
+// re-run as its MCP proxy (-mcp-proxy).
 package main
 
 import (
@@ -45,11 +44,7 @@ func main() {
 		return
 	}
 
-	run := loop.Run
-	if cfg.Driver == "kimi" {
-		run = loop.RunKimi
-	}
-	path, err := run(ctx, cfg)
+	path, err := loop.Run(ctx, cfg)
 	if err != nil {
 		log.Fatal(err)
 	}

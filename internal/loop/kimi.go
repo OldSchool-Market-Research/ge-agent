@@ -22,25 +22,26 @@ import (
 	"github.com/osrs-ge/ge-agent/internal/report"
 )
 
-// RunKimi executes one directive cycle with the Kimi Code CLI as the model
-// loop. Kimi's coding plan has no API access, only its CLI (logged in once
-// by device-code OAuth), so instead of calling a model endpoint ge-agent:
+// Run executes one directive cycle with the Kimi Code CLI as the model loop.
+// Returns the report path. Kimi's coding plan has no API access, only its
+// CLI (logged in once by device-code OAuth), so instead of calling a model
+// endpoint ge-agent:
 //
 //  1. writes a per-run kimi workspace: an agent file whose prompt is the
-//     same directive + harness notes + brief the api driver sends, with a
-//     tool allowlist of mcp__ge__* only (no shell, file or web tools), and an
-//     mcp.json naming `ge-agent -mcp-proxy` (proxy.go) as the one MCP server;
+//     directive + harness notes + brief, with a tool allowlist of mcp__ge__*
+//     only (no shell, file or web tools), and an mcp.json naming
+//     `ge-agent -mcp-proxy` (proxy.go) as the one MCP server;
 //  2. runs `kimi -p` with stream-json output, logging turns and tool calls
 //     and enforcing MAX_TURNS plus the one-time rejection grace;
-//  3. nudges a model that stops without submitting by resuming its session,
-//     like the api loop's nudges;
+//  3. nudges a model that stops without submitting by resuming its session;
 //  4. reads the outcome the proxy recorded and the token usage from kimi's
-//     session log, and writes the same report + stats artifacts, so the
-//     orchestrator sees the drivers differ only in cost.
+//     session log, and writes the report + stats artifacts the orchestrator
+//     ingests.
 //
-// Validated 2026-10-30 on run 8669's brief: MiniMax hit MAX_TURNS 80 with no
-// report; K3.1 Pro submitted a valid report on its first attempt in 11 turns.
-func RunKimi(ctx context.Context, cfg *config.Config) (string, error) {
+// Validated 2026-10-30 on run 8669's brief: MiniMax-M3 (the previous model
+// loop, removed in 0.14.0) hit MAX_TURNS 80 with no report; K3.1 Pro
+// submitted a valid report on its first attempt in 11 turns.
+func Run(ctx context.Context, cfg *config.Config) (string, error) {
 	runStart := time.Now().UTC()
 	reportPath := report.Filename(cfg.ReportsDir, runStart)
 	absReport, err := filepath.Abs(reportPath)
@@ -219,13 +220,7 @@ func runKimiOnce(ctx context.Context, cfg *config.Config, ws string, h proxyHand
 // (the proxy, and through it ge-mcp's DSN) inherit — so no secret is ever
 // written into the workspace's mcp.json.
 func kimiEnv(cfg *config.Config, ws string, h proxyHandoff) []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "MINIMAX_API_KEY=") {
-			continue // the api driver's key has no business in kimi's environment
-		}
-		env = append(env, kv)
-	}
+	env := os.Environ()
 	// The orchestrator spawns ge-agent with a minimal environment, and kimi
 	// is a node script (#!/usr/bin/env node) that also needs a home.
 	if os.Getenv("PATH") == "" {
@@ -240,7 +235,6 @@ func kimiEnv(cfg *config.Config, ws string, h proxyHandoff) []string {
 	env = append(env,
 		"KIMI_CODE_TRUST_WORKSPACE=1", // else kimi skips the workspace's mcp.json
 		"KIMI_CODE_NO_AUTO_UPDATE=1",  // the image pins the CLI version
-		"GE_AGENT_DRIVER=kimi",        // the proxy needs no API key
 	)
 	return append(env, h.env()...)
 }
@@ -296,7 +290,7 @@ func kimiPreamble(runStart time.Time) string {
 type kimiStream struct {
 	maxTurns  int
 	turns     int
-	turnCalls []int             // ge-mcp calls per turn (submit_report excluded, as in the api loop)
+	turnCalls []int             // ge-mcp calls per turn (submit_report excluded)
 	turnTools []int             // every tool call per turn, submit_report included
 	names     map[string]string // tool_call_id -> tool name, prefix stripped
 	grace     bool
@@ -324,14 +318,14 @@ type kimiLine struct {
 }
 
 // feed consumes one stream-json line and reports whether kimi should be
-// stopped: the turn budget is spent (like the api loop, the model gets
-// maxTurns turns whose tool calls all run; asking for one more ends the run),
-// or the proxy has settled the run and any further turn is wasted.
+// stopped: the turn budget is spent (the model gets maxTurns turns whose
+// tool calls all run; asking for one more ends the run), or the proxy has
+// settled the run and any further turn is wasted.
 //
 // The kill on an over-budget turn races that turn's tool calls, which kimi
 // may already be running; if one was a submit_report the proxy accepted, the
 // run keeps that valid report (the driver checks the outcome first), where
-// the api loop would have failed it with MAX_TURNS. Deliberately lenient.
+// a strict turn cap would have failed it with MAX_TURNS. Deliberately lenient.
 func (s *kimiStream) feed(line []byte) bool {
 	var l kimiLine
 	if err := json.Unmarshal(line, &l); err != nil {

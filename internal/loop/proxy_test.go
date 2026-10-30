@@ -197,6 +197,6 @@ func TestProxyServesSubmitReport(t *testing.T) {
 		t.Fatalf("tools: %v", tools)
 	}
 	if !strings.Contains(string(tools["submit_report"].Tool.RawInputSchema), `"strategies"`) {
-		t.Error("submit_report must carry the api loop's schema")
+		t.Error("submit_report must carry the report schema")
 	}
 }

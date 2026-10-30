@@ -5,17 +5,14 @@
 package loop
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/osrs-ge/ge-agent/internal/config"
-	"github.com/osrs-ge/ge-agent/internal/llm"
 	"github.com/osrs-ge/ge-agent/internal/mcpbridge"
 	"github.com/osrs-ge/ge-agent/internal/report"
 	"github.com/osrs-ge/ge-agent/internal/strategy"
@@ -109,128 +106,6 @@ var submitReportDef = json.RawMessage(`{
   }
 }`)
 
-// Run executes one directive cycle. Returns the report path.
-func Run(ctx context.Context, cfg *config.Config) (string, error) {
-	runStart := time.Now().UTC()
-	reportPath := report.Filename(cfg.ReportsDir, runStart)
-
-	system, err := systemPrompt(cfg, harnessPreamble(runStart))
-	if err != nil {
-		return "", err
-	}
-
-	bridge, err := mcpbridge.New(ctx, cfg.GeMcpPath, cfg.GeMcpDSN)
-	if err != nil {
-		return "", err
-	}
-	defer bridge.Close()
-
-	mcpTools, err := bridge.Tools(ctx)
-	if err != nil {
-		return "", err
-	}
-	log.Printf("ge-mcp up: %d tools", len(mcpTools))
-
-	tools := make([]json.RawMessage, 0, len(mcpTools)+1)
-	for _, t := range mcpTools {
-		raw, err := json.Marshal(t)
-		if err != nil {
-			return "", err
-		}
-		tools = append(tools, raw)
-	}
-	tools = append(tools, submitReportDef)
-
-	client := &llm.Client{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Model: cfg.Model,
-		HTTP: newHTTPClient(), CacheControl: cfg.CacheControl}
-
-	history := []llm.Message{{Role: "user", Content: llm.TextContent(kickoffPrompt)}}
-
-	nudges := 0
-	maxTurns := cfg.MaxTurns
-	graceGranted := false
-	lastReject, sameRejects := "", 0
-	stats := report.RunStats{RunStartedAt: runStart, Outcome: "failed"}
-	for turn := 1; turn <= maxTurns; turn++ {
-		sendable, prunedBytes := pruneHistory(history, cfg.PruneKeepTurns)
-		stats.PrunedBytes += prunedBytes
-		resp, err := client.Send(ctx, system, sendable, tools, cfg.MaxTokens)
-		if err != nil {
-			return failRun(reportPath, bridge, &stats, fmt.Errorf("turn %d: %w", turn, err))
-		}
-		stats.Turns = turn
-		stats.InputTokens += resp.Usage.InputTokens
-		stats.OutputTokens += resp.Usage.OutputTokens
-		if resp.Usage.InputTokens > stats.PeakInput {
-			stats.PeakInput = resp.Usage.InputTokens
-		}
-		turnStat := report.TurnStat{Turn: turn, InputTokens: resp.Usage.InputTokens, OutputTokens: resp.Usage.OutputTokens}
-		log.Printf("turn %d: stop=%s in=%d out=%d pruned=%dB", turn, resp.StopReason, resp.Usage.InputTokens, resp.Usage.OutputTokens, prunedBytes)
-		history = append(history, llm.Message{Role: "assistant", Content: resp.Content})
-
-		toolUses := collectToolUses(resp.Blocks)
-		if len(toolUses) == 0 {
-			stats.PerTurn = append(stats.PerTurn, turnStat)
-			// Model stopped talking instead of submitting. Nudge twice, then fail.
-			if nudges++; nudges > maxNudges {
-				return failRun(reportPath, bridge, &stats, fmt.Errorf("model ended without submit_report after %d nudges", nudges-1))
-			}
-			history = append(history, llm.Message{Role: "user", Content: llm.TextContent(nudgePrompt)})
-			continue
-		}
-
-		var results []any
-		for _, tu := range toolUses {
-			if tu.Name == submitReportTool {
-				path, gateErr := handleSubmit(tu.Input, reportPath, runStart, bridge)
-				if gateErr == "" {
-					log.Printf("report accepted: %s", path)
-					stats.Outcome = "submitted"
-					stats.PerTurn = append(stats.PerTurn, turnStat)
-					if err := report.WriteStats(path, stats); err != nil {
-						log.Printf("could not write run stats: %v", err)
-					}
-					return path, nil
-				}
-				log.Printf("report rejected: %s", gateErr)
-				if gateErr == lastReject {
-					sameRejects++
-				} else {
-					lastReject, sameRejects = gateErr, 1
-				}
-				if sameRejects >= maxSameRejections {
-					stats.PerTurn = append(stats.PerTurn, turnStat)
-					return failRun(reportPath, bridge, &stats, fmt.Errorf("report rejected %d times in a row for the same reason: %s", sameRejects, gateErr))
-				}
-				if !graceGranted {
-					graceGranted = true
-					maxTurns += graceTurns
-					log.Printf("grace: +%d turns to fix the rejected report (budget now %d)", graceTurns, maxTurns)
-				}
-				results = append(results, llm.ToolResult(tu.ID, rejectionPayload(gateErr, sameRejects), true))
-				continue
-			}
-			text, isErr, err := bridge.Call(ctx, tu.Name, tu.Input)
-			if err != nil {
-				return failRun(reportPath, bridge, &stats, fmt.Errorf("tool %s: %w", tu.Name, err))
-			}
-			log.Printf("  tool %s (err=%v, %d bytes)", tu.Name, isErr, len(text))
-			stats.ToolCalls++
-			turnStat.ToolCalls++
-			results = append(results, llm.ToolResult(tu.ID, text, isErr))
-		}
-		stats.PerTurn = append(stats.PerTurn, turnStat)
-		history = append(history, llm.Message{Role: "user", Content: llm.MakeContent(results...)})
-	}
-	return failRun(reportPath, bridge, &stats, fmt.Errorf("MAX_TURNS (%d, incl. any grace) exhausted without a valid report", maxTurns))
-}
-
-// newHTTPClient allows long per-request times: M3 is a reasoning model and
-// large tool-heavy turns can take minutes.
-func newHTTPClient() *http.Client {
-	return &http.Client{Timeout: 10 * time.Minute}
-}
-
 const (
 	kickoffPrompt = "Run one full research cycle now, per the directive. Finish by calling submit_report with the complete report."
 	nudgePrompt   = "You have not submitted the report. Continue the cycle and finish by calling submit_report exactly once."
@@ -266,20 +141,6 @@ func systemPrompt(cfg *config.Config, preamble string) (string, error) {
 	return system, nil
 }
 
-func harnessPreamble(runStart time.Time) string {
-	return fmt.Sprintf(`## Harness notes (from the runtime, not the directive)
-- Current time: %s (UTC). Use this as the run timestamp in the report header.
-- Do NOT write any file yourself. Finish by calling the submit_report tool exactly once
-  with the complete markdown; the harness owns the filename and appends the
-  authoritative tool-call appendix.
-- Every tool response is a JSON envelope {as_of, data_window, row_count, rows, ...}.
-  An empty rows with a note is a real "nothing traded" signal, not an error.
-- To keep turns affordable, OLD tool results in your context may be trimmed to a
-  stub (marked "[harness: … pruned …]"). Numbers you already worked from stand;
-  if you need trimmed data again, re-call the tool — do not guess from the stub.`,
-		runStart.Format("2006-01-02 15:04"))
-}
-
 // rejectionPayload is the tool_result body for a rejected submit_report:
 // the gate's reason plus a fix-only-the-field hint, escalated when the model
 // repeats the same mistake.
@@ -292,21 +153,11 @@ func rejectionPayload(gateErr string, sameRejects int) string {
 	return string(payload)
 }
 
-// auditor is whatever witnessed the run's tool calls: the api driver's
-// bridge, or the kimi driver's proxy (which also replays the calls of an
-// earlier proxy in the same run).
+// auditor is whatever witnessed the run's tool calls: the MCP proxy (which
+// also replays the calls of an earlier proxy in the same run), or the
+// driver's reader of the proxy's audit file.
 type auditor interface {
 	AuditLog() []mcpbridge.CallRecord
-}
-
-func collectToolUses(blocks []llm.Block) []llm.Block {
-	var out []llm.Block
-	for _, b := range blocks {
-		if b.Type == "tool_use" {
-			out = append(out, b)
-		}
-	}
-	return out
 }
 
 func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, audit auditor) (string, string) {
