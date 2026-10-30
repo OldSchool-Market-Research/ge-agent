@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/osrs-ge/ge-agent/internal/config"
 	"github.com/osrs-ge/ge-agent/internal/report"
@@ -60,13 +61,19 @@ func TestKimiStreamRejectionGrantsGraceOnce(t *testing.T) {
 func TestKimiStreamStopsOnceSettled(t *testing.T) {
 	st := newKimiStream(80)
 	st.feed(assistant("mcp__ge__submit_report"))
-	if !st.feed(toolResult("mcp__ge__submit_report-a", "Report accepted. The run is complete")) || !st.finished {
+	if !st.feed(toolResult("mcp__ge__submit_report-a", acceptedMsg)) || !st.finished {
 		t.Fatal("an accepted report must stop kimi")
 	}
 	st = newKimiStream(80)
 	st.feed(assistant("mcp__ge__quote"))
-	if !st.feed(toolResult("mcp__ge__quote-a", "FATAL: tool quote: broken pipe -- the run has failed")) {
-		t.Fatal("a fatal proxy error must stop kimi")
+	if !st.feed(toolResult("mcp__ge__quote-a", "Error: "+fatalPrefix+"tool quote: call quote: broken pipe"+fatalSuffix)) {
+		t.Fatal("a fatal proxy error (even wrapped by kimi) must stop kimi")
+	}
+	// Market data that merely contains the word is not the proxy settling.
+	st = newKimiStream(80)
+	st.feed(assistant("mcp__ge__lookup_item"))
+	if st.feed(toolResult("mcp__ge__lookup_item-a", `{"rows":[{"name":"FATAL: not an item"}]}`)) || st.finished {
+		t.Fatal("tool data containing FATAL: stopped the run")
 	}
 }
 
@@ -133,11 +140,49 @@ func TestFindKimiSession(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := findKimiSession(home, "/runs/1/kimi"); got != "session_new" {
+	if got := findKimiSession(home, "/runs/1/kimi", time.UnixMilli(0)); got != "session_new" {
 		t.Errorf("got %q", got)
 	}
-	if got := findKimiSession(home, "/runs/9/kimi"); got != "" {
+	if got := findKimiSession(home, "/runs/9/kimi", time.UnixMilli(0)); got != "" {
 		t.Errorf("unknown workspace matched %q", got)
+	}
+	// A session from before this run started (a reused workspace whose run
+	// died before kimi opened one) must not be billed to this run.
+	if got := findKimiSession(home, "/runs/1/kimi", time.UnixMilli(201)); got != "" {
+		t.Errorf("an earlier run's session matched: %q", got)
+	}
+}
+
+// A workspace reused from an earlier run must not leak its outcome, audit
+// log or rejection streak into this one.
+func TestKimiWorkspaceStartsEmpty(t *testing.T) {
+	ws := t.TempDir()
+	h := proxyHandoff{Dir: ws}
+	for _, stale := range []string{h.resultPath(), h.auditPath(), h.streakPath()} {
+		if err := os.WriteFile(stale, []byte(`{"outcome":"submitted"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeKimiWorkspace(ws, "SYSTEM PROMPT", "/bin/ge-agent"); err != nil {
+		t.Fatal(err)
+	}
+	for _, stale := range []string{h.resultPath(), h.auditPath(), h.streakPath()} {
+		if _, err := os.Stat(stale); err == nil {
+			t.Errorf("%s survived the reset", filepath.Base(stale))
+		}
+	}
+}
+
+func TestKimiHomeMatchesKimiEnv(t *testing.T) {
+	t.Setenv("HOME", "")
+	cfg := &config.Config{}
+	env := strings.Join(kimiEnv(cfg, "/ws", proxyHandoff{}), "\n")
+	if !strings.Contains(env, "HOME=/ws/home\n") || kimiHome(cfg, "/ws") != "/ws/home/.kimi-code" {
+		t.Errorf("kimi's home and the usage reader disagree: %q", kimiHome(cfg, "/ws"))
+	}
+	cfg.KimiHome = "/kimi"
+	if kimiHome(cfg, "/ws") != "/kimi" {
+		t.Errorf("configured home ignored")
 	}
 }
 

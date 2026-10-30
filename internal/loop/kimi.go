@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -74,10 +75,10 @@ func RunKimi(ctx context.Context, cfg *config.Config) (string, error) {
 	stats.ToolCalls = len(audit)
 	if st.sessionID == "" {
 		// Stopping kimi the moment the report is accepted also skips its
-		// closing resume hint; the session is the one run in this workspace.
-		st.sessionID = findKimiSession(kimiHome(cfg), ws)
+		// closing resume hint; the session is this run's one in this workspace.
+		st.sessionID = findKimiSession(kimiHome(cfg, ws), ws, runStart)
 	}
-	usage, err := readKimiUsage(kimiHome(cfg), st.sessionID)
+	usage, err := readKimiUsage(kimiHome(cfg, ws), st.sessionID)
 	if err != nil {
 		log.Printf("could not read kimi token usage: %v", err)
 	}
@@ -156,6 +157,15 @@ func runKimiOnce(ctx context.Context, cfg *config.Config, ws string, h proxyHand
 	if err != nil {
 		return err
 	}
+	pgid := 0
+	defer func() {
+		// Whatever kimi did on its way out (ignored SIGTERM and was killed
+		// alone after WaitDelay, or exited leaving children), the proxy and
+		// its ge-mcp — and their DB connection — must not outlive the run.
+		if pgid > 0 {
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		}
+	}()
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return err
@@ -163,6 +173,7 @@ func runKimiOnce(ctx context.Context, cfg *config.Config, ws string, h proxyHand
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start %s: %w", cfg.KimiCmd, err)
 	}
+	pgid = cmd.Process.Pid
 	var wg sync.WaitGroup
 	var lastErrLine string
 	wg.Add(1)
@@ -183,6 +194,13 @@ func runKimiOnce(ctx context.Context, cfg *config.Config, ws string, h proxyHand
 		if st.feed(sc.Bytes()) {
 			cancel()
 		}
+	}
+	if err := sc.Err(); err != nil {
+		// An unreadable stream can't be followed (turns, cap, settlement):
+		// stop kimi, and drain so it isn't left blocked on a full pipe.
+		log.Printf("kimi stream unreadable, stopping kimi: %v", err)
+		cancel()
+		_, _ = io.Copy(io.Discard, stdout)
 	}
 	wg.Wait()
 	err = cmd.Wait()
@@ -211,11 +229,7 @@ func kimiEnv(cfg *config.Config, ws string, h proxyHandoff) []string {
 		env = append(env, "PATH=/usr/local/bin:/usr/bin:/bin")
 	}
 	if os.Getenv("HOME") == "" {
-		home := cfg.KimiHome
-		if home == "" {
-			home = ws
-		}
-		env = append(env, "HOME="+home)
+		env = append(env, "HOME="+fallbackHome(cfg, ws))
 	}
 	if cfg.KimiHome != "" {
 		env = append(env, "KIMI_CODE_HOME="+cfg.KimiHome)
@@ -233,7 +247,13 @@ const (
 	kimiToolPrefix = "mcp__ge__"
 )
 
+// writeKimiWorkspace starts the run's workspace from empty: a stale
+// result.json, audit log or rejection streak from anything that ran here
+// before would settle or poison this run.
 func writeKimiWorkspace(ws, system, self string) error {
+	if err := os.RemoveAll(ws); err != nil {
+		return err
+	}
 	for _, d := range []string{filepath.Join(ws, ".kimi-code"), filepath.Join(ws, "skills")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
@@ -304,6 +324,11 @@ type kimiLine struct {
 // stopped: the turn budget is spent (like the api loop, the model gets
 // maxTurns turns whose tool calls all run; asking for one more ends the run),
 // or the proxy has settled the run and any further turn is wasted.
+//
+// The kill on an over-budget turn races that turn's tool calls, which kimi
+// may already be running; if one was a submit_report the proxy accepted, the
+// run keeps that valid report (the driver checks the outcome first), where
+// the api loop would have failed it with MAX_TURNS. Deliberately lenient.
 func (s *kimiStream) feed(line []byte) bool {
 	var l kimiLine
 	if err := json.Unmarshal(line, &l); err != nil {
@@ -335,7 +360,10 @@ func (s *kimiStream) feed(line []byte) bool {
 	case l.Role == "tool":
 		name := s.names[l.ToolCallID]
 		text := contentText(l.Content)
-		if strings.Contains(text, "FATAL: ") || (name == submitReportTool && strings.Contains(text, "Report accepted")) {
+		// The proxy's own settlement messages (kimi may wrap an error
+		// result, so match them anywhere, prefix and sentinel suffix both).
+		if strings.Contains(text, fatalPrefix) && strings.Contains(text, fatalSuffix) ||
+			(name == submitReportTool && strings.Contains(text, acceptedMsg)) {
 			s.finished = true
 			return true
 		}
@@ -405,27 +433,40 @@ type kimiUsage struct {
 	InputCacheCreation int `json:"inputCacheCreation"`
 }
 
-func kimiHome(cfg *config.Config) string {
+// fallbackHome is HOME for kimi when ge-agent has none (the orchestrator's
+// minimal env): the kimi home if configured, else a dir in the workspace —
+// not the workspace itself, whose .kimi-code holds the run's mcp.json.
+func fallbackHome(cfg *config.Config, ws string) string {
 	if cfg.KimiHome != "" {
 		return cfg.KimiHome
 	}
-	if home := os.Getenv("HOME"); home != "" {
-		return filepath.Join(home, ".kimi-code")
-	}
-	return ""
+	return filepath.Join(ws, "home")
 }
 
-// findKimiSession returns the id of the newest kimi session whose working
-// directory is ws (each run has its own workspace), or "".
-func findKimiSession(home, ws string) string {
+// kimiHome is where the CLI keeps its login and sessions (KIMI_CODE_HOME),
+// resolved exactly as kimiEnv sets it up.
+func kimiHome(cfg *config.Config, ws string) string {
+	if cfg.KimiHome != "" {
+		return cfg.KimiHome
+	}
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = fallbackHome(cfg, ws)
+	}
+	return filepath.Join(home, ".kimi-code")
+}
+
+// findKimiSession returns the id of the newest kimi session that this run
+// started in ws, or "".
+func findKimiSession(home, ws string, runStart time.Time) string {
 	states, _ := filepath.Glob(filepath.Join(home, "sessions", "*", "session_*", "state.json"))
 	var id string
-	var newest int64
+	newest := runStart.UnixMilli()
 	for _, path := range states {
 		var s struct {
 			ID        string `json:"id"`
 			Cwd       string `json:"cwd"`
-			CreatedAt int64  `json:"createdAt"`
+			CreatedAt int64  `json:"createdAt"` // unix ms
 		}
 		if readJSON(path, &s) == nil && s.Cwd == ws && s.CreatedAt >= newest {
 			id, newest = s.ID, s.CreatedAt

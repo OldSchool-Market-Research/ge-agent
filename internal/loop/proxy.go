@@ -37,6 +37,10 @@ const (
 	envProxyStart  = "GE_AGENT_PROXY_START"
 
 	runOverMsg = "The run is over (the report was accepted, or the run failed). Stop now: do not call any more tools."
+	// Settlement messages; the driver stops kimi on seeing them.
+	acceptedMsg = "Report accepted. The run is complete: stop now and do not call any more tools."
+	fatalPrefix = "FATAL: "
+	fatalSuffix = " -- the run has failed; stop now."
 )
 
 // proxyHandoff is what RunKimi tells the proxy it spawns (through kimi's
@@ -165,7 +169,7 @@ func (p *proxy) callTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 		// something the model can fix, so the run fails.
 		reason := fmt.Sprintf("tool %s: %v", req.Params.Name, err)
 		p.finish(proxyResult{Outcome: "failed", FailReason: reason})
-		return mcp.NewToolResultError("FATAL: " + reason + " -- the run has failed; stop now."), nil
+		return mcp.NewToolResultError(fatalPrefix + reason + fatalSuffix), nil
 	}
 	p.mu.Lock()
 	p.flushAuditLocked()
@@ -190,7 +194,7 @@ func (p *proxy) submit(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 	if gateErr == "" {
 		log.Printf("report accepted: %s", path)
 		p.finishLocked(proxyResult{Outcome: "submitted", ReportPath: path})
-		return mcp.NewToolResultText("Report accepted. The run is complete: stop now and do not call any more tools."), nil
+		return mcp.NewToolResultText(acceptedMsg), nil
 	}
 	log.Printf("report rejected: %s", gateErr)
 	if gateErr == p.streak.Last {
@@ -204,7 +208,7 @@ func (p *proxy) submit(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 	if p.streak.Same >= maxSameRejections {
 		reason := fmt.Sprintf("report rejected %d times in a row for the same reason: %s", p.streak.Same, gateErr)
 		p.finishLocked(proxyResult{Outcome: "failed", FailReason: reason})
-		return mcp.NewToolResultError("FATAL: " + reason + " -- the run has failed; stop now."), nil
+		return mcp.NewToolResultError(fatalPrefix + reason + fatalSuffix), nil
 	}
 	res := mcp.NewToolResultText(rejectionPayload(gateErr, p.streak.Same))
 	res.IsError = true
