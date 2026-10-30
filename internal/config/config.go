@@ -32,6 +32,16 @@ type Config struct {
 	// CacheControl marks system+tools with prompt-cache breakpoints. Off
 	// until MiniMax's Anthropic-compatible endpoint is verified to accept it.
 	CacheControl bool // GE_AGENT_CACHE_CONTROL
+
+	// Driver picks what runs the model loop. "api" (default) is the
+	// hand-rolled Anthropic-messages loop against BaseURL/Model. "kimi" hands
+	// the loop to the Kimi Code CLI, which authenticates with a coding-plan
+	// login rather than an API key (the plan has no API access), while
+	// ge-agent serves the tools to it as an MCP proxy (loop/kimi.go).
+	Driver    string // GE_AGENT_DRIVER: api | kimi
+	KimiCmd   string // GE_AGENT_KIMI_CMD — the kimi CLI
+	KimiHome  string // GE_AGENT_KIMI_HOME — KIMI_CODE_HOME (login, config, sessions); "" = the CLI's default
+	KimiModel string // GE_AGENT_KIMI_MODEL — model alias, e.g. kimi-code/k3.1-pro; "" = the CLI's default_model
 }
 
 func Load() (*Config, error) {
@@ -50,12 +60,19 @@ func Load() (*Config, error) {
 
 		PruneKeepTurns: getenvInt("GE_AGENT_PRUNE_KEEP_TURNS", 2),
 		CacheControl:   os.Getenv("GE_AGENT_CACHE_CONTROL") == "1",
+
+		Driver:    getenv("GE_AGENT_DRIVER", "api"),
+		KimiCmd:   getenv("GE_AGENT_KIMI_CMD", "kimi"),
+		KimiHome:  os.Getenv("GE_AGENT_KIMI_HOME"),
+		KimiModel: os.Getenv("GE_AGENT_KIMI_MODEL"),
 	}
 	if c.APIKey == "" {
 		c.APIKey = keyFromDotEnv(".env", "minimax")
 	}
 	switch {
-	case c.APIKey == "":
+	case c.Driver != "api" && c.Driver != "kimi":
+		return nil, fmt.Errorf("GE_AGENT_DRIVER %q: want api or kimi", c.Driver)
+	case c.Driver == "api" && c.APIKey == "":
 		return nil, fmt.Errorf("no API key: set MINIMAX_API_KEY or `minimax=` in ./.env")
 	case c.GeMcpPath == "":
 		return nil, fmt.Errorf("GE_MCP_PATH not set (path to the ge-mcp binary)")
