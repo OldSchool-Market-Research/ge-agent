@@ -210,18 +210,18 @@ involvement. It is not advice — it is the arithmetic your claims will be judge
 by. Read these sections before you pitch anything:
 
 - **Calibration.** Per archetype: `factor = p_survive × pace_ratio`, measured
-  from every recent close. The harness computes `EV_calibrated = factor × your
-  claimed EV` and holds it against the lane floor — so **pre-filter with the
-  same arithmetic**: when the brief says C:decant's factor is 0.2, a candidate
-  whose honest cycle gp is 600k is worth ~120k calibrated, under the 200k floor;
-  find bigger edges or evidence strong enough to beat the base rate, and cite
-  that evidence in the thesis. Pitching against the factor without new evidence
-  wastes a slot. The same factor scales the confirm bar, so an honest claim is
-  also how a strategy of yours ever gets confirmed.
-  For lane F the calibrated floor is **enforced**: an F ship whose factor ×
-  `per_cycle_gp` is under 400k is vetoed, whatever its evidence. Lane C carries
-  one row per recipe kind (`C:set`, `C:combine`, `C:decant`) — judge a candidate
-  by its own kind's factor, not the blended `C` row.
+  from every recent close. `EV_calibrated = factor × your claimed EV`. The same
+  factor scales the confirm bar, so an honest claim is also how a strategy of yours
+  ever gets confirmed.
+  **Lane F: the calibrated floor is enforced, so pre-filter with the same
+  arithmetic.** At a factor of 0.15, a candidate whose honest cycle gp is 600k is
+  worth 90k calibrated and is vetoed under the 400k floor, whatever its evidence.
+  **Lane C: it is not enforced.** C carries one row per recipe kind (`C:set`,
+  `C:combine`, `C:decant`). Use them to decide where to spend turns, and cite your
+  kind's factor in the thesis, but never dismiss a conversion on its factor alone:
+  a low one can be a measurement artifact (a thin leg's 30-minute volume can read as
+  zero pace on a positive margin). A candidate that clears the 200k floor at honest
+  size and survives your falsification ships.
 - **Failure-mode digest.** How recent ships of each archetype actually died
   (`margin_collapse`, `leg_stale`, `volume_dried`, `entry_unreachable`,
   `exit_not_printing`, `stopped_out`, `expired_below_pace`). The dominant mode
@@ -634,8 +634,8 @@ harness could paper-trade it mechanically.
 > of 640 = 96 conversions/4h, above the buy bound of 15 ✓. No skill or quest gate in
 > `notes` ✓. No-arb: 48k is 2.5% of the sell side, inside the normal set premium ✓.
 > **Size:** min(buy bound 15, volume 96, budget 27) = 15 conversions; 15 × 48,000 =
-> 720k gp/cycle (≥ 200k floor ✓); capital 27.75M ≤ budget ✓. Calibrated: the brief's
-> C:set factor 0.45 × 720k = 324k, still clears the floor ✓.
+> 720k gp/cycle (≥ 200k floor ✓); capital 27.75M ≤ budget ✓. The brief's C:set factor
+> of 0.45 says sets have held up lately; cite it in the thesis.
 > **Spec:** legs and relation_id copied from `combo_quote`, entry 1,850,000, exit
 > 1,898,000, units_used 15, per_cycle 720,000, per_1h 180,000, attention: "buy pieces
 > over 4h, exchange at the GE clerk, list the set; one batch per visit; safe
@@ -645,5 +645,5 @@ harness could paper-trade it mechanically.
 > at this size and where the harness kills it.
 
 That's the bar: a claim with a mechanism, numbers from the tools, the confounds
-explicitly killed, an absolute-gp size that clears the floor after calibration, and
-an attention contract the operator can accept or decline.
+explicitly killed, an absolute-gp size that clears the floor, and an attention
+contract the operator can accept or decline.
