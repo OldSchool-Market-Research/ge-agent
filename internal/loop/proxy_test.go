@@ -365,10 +365,16 @@ func TestProposalsSchemaStaysLoose(t *testing.T) {
 		t.Fatal("submit_report has no proposals field")
 	}
 	var field struct {
+		Type  any            `json:"type"`
 		Items map[string]any `json:"items"`
 	}
 	if err := json.Unmarshal(raw, &field); err != nil {
 		t.Fatal(err)
+	}
+	// plain array: this schema goes to the model API too, and a shape it hasn't
+	// already accepted could fail every run on the first call
+	if field.Type != "array" {
+		t.Errorf("proposals type must be array, got %v", field.Type)
 	}
 	if len(field.Items) != 1 || field.Items["type"] != "object" {
 		t.Errorf("proposals items must be a bare object, got %v", field.Items)
