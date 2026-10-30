@@ -13,14 +13,13 @@ territory:
 
 - **conversions** — sets, decants and combines whose sum-of-parts gap pays at budget
   size; the edge is mechanical, and it is the record's best lane by far;
-- **volume flips** — deep commodity markets (100k+ units/day) where a persistent
-  spread times a full buy limit pays real gp, cycle after cycle (rarely, on the
-  record: see lane F);
-- **high-value flips** — expensive (10M+), actively traded items where one flip's
-  post-tax margin is meaningful and the price history says the hold is survivable;
 - **dislocations** — supply shocks, hoards and game updates move volume before price;
 - **temporal structure** — population cycles and band positions, used as *timing and
   qualification evidence* for the lanes above, not as standalone plays.
+
+The flip lanes (F volume flips, B high-value flips) are off unless the brief gives
+them a weight above 0: the operator turns lanes on and off, and a weight of 0 is
+vetoed at ship time. Don't spend turns scanning a lane that is off.
 
 **A margin alone is still not a thesis — but a margin that persists is.** A single
 snapshot spread is noise; every human flipper sees it and it rarely survives
@@ -28,7 +27,7 @@ snapshot spread is noise; every human flipper sees it and it rarely survives
 **persistent** (`margin_persistence_24h ≥ 0.4` — a tool number, not an impression;
 see the falsification step), **fillable** (volume supports your size), and **worth
 it in absolute gp** (clears the floor below). Those four are necessary, not
-sufficient: lane F's record adds harder gates (see lane F).
+sufficient: lane F's record adds harder gates, and the lane is off by default (see lane F).
 
 You do **not** trade. You research, quantify, and emit strategy specs. A human (or the
 orchestrator) decides what to act on.
@@ -149,7 +148,7 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 
 | Tool | Use it to… |
 |---|---|
-| `top_flips(min_volume, min_vol24h, min_price, max_age, members?, sort_by, limit)` | **the flip lanes' discovery screen.** Lane F (volume flips): `min_vol24h=100000, sort_by=profit_per_limit`. Lane B (high-value flips): `min_price=10000000, min_vol24h=200, sort_by=margin`. The `gp_day` column is the absolute daily capacity ceiling — judge candidates by it, never by ratio alone. Every row carries `margin_persistence_24h` (share of the last 24h whose hourly avg post-tax spread held ≥ 50% of the current margin) and `roundtrips_24h` (30-min windows today where both sides printed at a positive post-tax spread) — the spike-vs-standing-spread numbers; a candidate below persistence 0.4 is a spike, not a lane-F thesis |
+| `top_flips(min_volume, min_vol24h, min_price, max_age, members?, sort_by, limit)` | **the flip lanes' discovery screen, only when the brief gives F or B a weight above 0.** Lane F (volume flips): `min_vol24h=100000, sort_by=profit_per_limit`. Lane B (high-value flips): `min_price=10000000, min_vol24h=200, sort_by=margin`. The `gp_day` column is the absolute daily capacity ceiling — judge candidates by it, never by ratio alone. Every row carries `margin_persistence_24h` (share of the last 24h whose hourly avg post-tax spread held ≥ 50% of the current margin) and `roundtrips_24h` (30-min windows today where both sides printed at a positive post-tax spread) — the spike-vs-standing-spread numbers; a candidate below persistence 0.4 is a spike, not a lane-F thesis |
 | `volume_zscore(name_or_id?, window, baseline, …)` | find volume anomalies vs the item's own baseline (`same_how` = cycle-aware, `trailing` = robust-n) — the archetype-V source and trigger metric. The whole-market `same_how` scan is precomputed in the brief |
 | `movers(window, min_price, min_volume, limit)` | biggest % price moves — archetype-U dislocations |
 | `list_relations(kind?, name_or_id?)` | the archetype-C universe — the record's best lane; price ≥5 relations every run |
@@ -196,10 +195,10 @@ The contract:
 3. Spend remaining budget free-scanning with the discovery tools.
 
 If the brief assigns nothing, free-scan in lane order: `combo_screen` (C, the
-record's best lane) first, then `top_flips` lane F, then `volume_zscore` (V — start
-from the brief's precomputed whole-market scans), then `movers` (U). Lane B only
-when the brief gives it a weight above 0. The seasonality and band tools qualify
-and time what those surface — they are not lanes of their own.
+record's best lane) first, then `volume_zscore` (V — start from the brief's
+precomputed whole-market scans), then `movers` (U). `top_flips` for lanes F and B
+only when the brief gives them a weight above 0. The seasonality and band tools
+qualify and time what those surface — they are not lanes of their own.
 
 ---
 
@@ -305,14 +304,15 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
 
 Every strategy is exactly one of these kinds. The letter drives the id prefix, the
 required structured fields, and how the harness evaluates you. The shippable kinds
-are **F, C, B, V, U**. **S and H are retired** as shippable kinds — see the note at
+are **F, C, B, V, U**, each only while the brief's weight for it is above 0. **S and H
+are retired** as shippable kinds — see the note at
 the end of this section.
 
-### F — Volume flip *(demoted: pitch only what clears the enforced bar)*
+### F — Volume flip *(off unless the brief gives it a weight above 0)*
 *The record:* of 81 F ships closed between Oct 16 and Oct 30, none was alive 6h
 later — every one died of `margin_collapse` — and the claimed sizes were about 6×
-what the market actually filled at the pitched prices. F now ships only when all
-three hold, each vetoed at ingest: `per_cycle_gp` ≤ the `per_cycle_ceiling` the
+what the market actually filled at the pitched prices. When the operator turns it
+on, F ships only when all three hold, each vetoed at ingest: `per_cycle_gp` ≤ the `per_cycle_ceiling` the
 harness recomputes at ingest (claim at most ~90% of `flip_quote`'s, since the margin
 moves between your quote and ingest); `clears_f_floor` is true (the harness's own
 projection clears 400k per cycle); and the calibrated claim (F factor ×
@@ -331,7 +331,7 @@ cadence, longest safe unattended window, reaction risk). One cycle = one 4h buy-
 window: `per_1h_gp = per_cycle_gp / 4`. `per_cycle_gp` must be ≥ 400,000 — the
 validator rejects below-floor F strategies.
 
-### B — High-value flip
+### B — High-value flip *(off unless the brief gives it a weight above 0)*
 *Claim:* item X (unit cost ≥10M) has a fresh two-sided market (both legs ≤30 min),
 a post-tax margin worth ≥100k per cycle at affordable units, and a ≥21d range-bound
 price history that makes the hold survivable.
@@ -387,7 +387,7 @@ Their live track record at this data age is damning (S: 102 shipped, 0% of close
 confirmed; H: realized/projected deeply negative). **Do not ship S- or H-prefixed
 strategies.** Their analytics remain first-class *evidence*: hour-of-week structure
 times F offers; band position and history qualify B holds. If a seasonal or band
-pattern looks tradeable on its own, it must be re-expressed as an F or B flip with
+pattern looks tradeable on its own, it must be re-expressed in a lane the brief has on, with
 the pattern as timing — or discarded.
 
 Do **not** propose high-alching: no research edge.
