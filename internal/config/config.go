@@ -24,6 +24,12 @@ type Config struct {
 	KimiCmd   string // GE_AGENT_KIMI_CMD — the kimi CLI
 	KimiHome  string // GE_AGENT_KIMI_HOME — KIMI_CODE_HOME (login, config, sessions); "" = the CLI's default
 	KimiModel string // GE_AGENT_KIMI_MODEL — model alias, e.g. kimi-code/k3.1-pro; "" = the CLI's default_model
+
+	// PrecomputedScans (GE_AGENT_PRECOMPUTED_SCANS=1, set by the orchestrator
+	// when its collector runs) means the brief already carries the whole-market
+	// same-hour-of-week volume z-scores and the seasonal scan, so the proxy
+	// refuses those slow calls (~65s and ~110s) and points at the brief.
+	PrecomputedScans bool
 }
 
 func Load() (*Config, error) {
@@ -39,6 +45,8 @@ func Load() (*Config, error) {
 		KimiCmd:   getenv("GE_AGENT_KIMI_CMD", "kimi"),
 		KimiHome:  os.Getenv("GE_AGENT_KIMI_HOME"),
 		KimiModel: os.Getenv("GE_AGENT_KIMI_MODEL"),
+
+		PrecomputedScans: getenvBool("GE_AGENT_PRECOMPUTED_SCANS"),
 	}
 	switch {
 	case c.GeMcpPath == "":
@@ -63,4 +71,9 @@ func getenvInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+func getenvBool(key string) bool {
+	b, _ := strconv.ParseBool(os.Getenv(key))
+	return b
 }
