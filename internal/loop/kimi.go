@@ -242,6 +242,10 @@ func kimiEnv(cfg *config.Config, ws string, h proxyHandoff) []string {
 const (
 	kimiAgentFile  = "ge-analyst.md"
 	kimiToolPrefix = "mcp__ge__"
+	// kimiToolTimeoutMs is kimi's per-call MCP timeout for ge-mcp (the CLI
+	// defaults to 60s). Full-market screens can run past a minute: run 8673
+	// (2026-10-30) lost a volume_zscore same_how scan at 60s, which takes ~65s.
+	kimiToolTimeoutMs = 5 * 60 * 1000
 )
 
 // writeKimiWorkspace starts the run's workspace from empty: a stale
@@ -262,7 +266,7 @@ func writeKimiWorkspace(ws, system, self string) error {
 		return err
 	}
 	mcpCfg, err := json.MarshalIndent(map[string]any{"mcpServers": map[string]any{
-		"ge": map[string]any{"command": self, "args": []string{"-mcp-proxy"}},
+		"ge": map[string]any{"command": self, "args": []string{"-mcp-proxy"}, "toolTimeoutMs": kimiToolTimeoutMs},
 	}}, "", "  ")
 	if err != nil {
 		return err

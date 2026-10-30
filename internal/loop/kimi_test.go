@@ -200,6 +200,7 @@ func TestKimiWorkspaceHasNoSecretsAndOnlyGeTools(t *testing.T) {
 			Command string            `json:"command"`
 			Args    []string          `json:"args"`
 			Env     map[string]string `json:"env"`
+			Timeout int               `json:"toolTimeoutMs"`
 		} `json:"mcpServers"`
 	}
 	raw, _ := os.ReadFile(filepath.Join(ws, ".kimi-code", "mcp.json"))
@@ -207,7 +208,7 @@ func TestKimiWorkspaceHasNoSecretsAndOnlyGeTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	ge := cfg.MCPServers["ge"]
-	if len(cfg.MCPServers) != 1 || ge.Command != "/bin/ge-agent" || len(ge.Args) != 1 || ge.Args[0] != "-mcp-proxy" || ge.Env != nil {
+	if len(cfg.MCPServers) != 1 || ge.Command != "/bin/ge-agent" || len(ge.Args) != 1 || ge.Args[0] != "-mcp-proxy" || ge.Env != nil || ge.Timeout != kimiToolTimeoutMs {
 		t.Errorf("mcp.json: %s", raw)
 	}
 }
