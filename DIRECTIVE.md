@@ -53,11 +53,12 @@ useless no matter how good the edge:
   more GE visits than some assumed cadence — instead every strategy MUST state its
   attention contract in the `attention` field: offer cadence, the longest safe
   unattended window, and what (if anything) a price move demands in reaction. The
-  operator picks what fits their day; you never assume it for them. The
+  operator picks what fits their day; you never assume it for them. On F, B and C the
   `attention_spec` field mirrors that contract as two numbers (`checks_per_hour`,
   `max_unattended_hours`) — the harness pings the operator only for strategies
   whose numbers fit their day, so a spec that disagrees with the prose either
-  spams them or silences a strategy they wanted to see.
+  spams them or silences a strategy they wanted to see. P has no `attention_spec`:
+  it's hands-on, so the validator rejects one.
 - **Reliability over upside.** They are building trust in this system before staking
   real gp. The boring, repeatable, high-confidence edge beats the bigger speculative
   one. Three strategies that paper-confirm are worth more than ten that die in a
@@ -217,7 +218,7 @@ by. Read these sections before you pitch anything:
   it and filter by it, and the brief's rows carry it. Yields differ a lot between
   families in the same kind, so a family with a measured row tells you more than its
   kind.
-- **Calibration.** Per archetype: `factor = p_survive × pace_ratio`, measured
+- **Calibration.** Per archetype except P: `factor = p_survive × pace_ratio`, measured
   from every recent close. `EV_calibrated = factor × your claimed EV`. The same
   factor scales the confirm bar, so an honest claim is also how a strategy of yours
   ever gets confirmed.
@@ -303,11 +304,12 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
      before judging: `per_cycle_gp = combo_margin × min(units_bound_per_4h, the min
      over legs of ~15% of that leg's 4h volume ÷ its qty)` — "small per conversion" is never a dismissal
      reason; a 32k/conversion edge at 100 conversions/4h is a 3.2M/cycle candidate.
-   - **P**: does `process_quote`'s `meta.harness` say `shippable`? Has it paid in at
-     least 80% of the last 24 hourly snapshots (`process_top`'s % hours positive, at
-     least 12 hours of history), or did one good hour make it look good? Which rate
-     caps it, and is that rate real? Any skill, quest or unlock it needs goes in the
-     risks: the table doesn't curate them.
+   - **P**: does `process_quote`'s `meta.harness` say `shippable`? That's the vet's whole
+     test: the floor at honest size, at least 80% of the last day's hourly snapshots at
+     the floor (`hours_at_floor_24h` of `hours_24h`, with at least 12 hours), and no leg
+     older than 6h (`max_leg_age_s`). Past that, is a leg over an hour old propping up
+     the margin (`slow_age_s`)? Which rate caps it, and is that rate real? Any skill,
+     quest or unlock it needs goes in the risks: the table doesn't curate them.
    - **U**: is the event real and dated? What's the base rate for this event class
      moving this item? Ride and fade cannot both be your thesis — pick one and say why.
    If the disconfirming check fails, **discard the hypothesis** — don't soften it.
@@ -326,7 +328,7 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
 6. **Spec.** Emit the strategy object with the kind-specific structured fields
    (schema below) — the harness paper-trades exactly what you write there.
 7. **Rank.** Order by absolute post-tax gp/day. Dismiss anything below its lane
-   floor (F 400k, C 200k gp/cycle) regardless of its ratios. Confidence must be
+   floor (F 400k, C 200k gp/cycle, P 250k gp per hour of play) regardless of its ratios. Confidence must be
    *earned by evidence* (sample size + lookback covered), not asserted.
 
 ---
@@ -417,12 +419,16 @@ assumes all of the market's volume at exact prices, and the harness caps at 15% 
 market and the research budget: a recipe reading 3M gp/hr can be worth 150k. Judge by
 the harness, and call `process_quote` last before shipping.
 *Spec:* `recipe_id`, with `entry_price` = `entry_per_action`, `exit_price` =
-`exit_per_action`, `size.units_used` = `units_per_4h`, `capital_required` = units x
-entry, `per_1h_gp` = the harness `gp_hr`, `per_cycle_gp` = that x 4. `attention` says
-it's hands-on, at what rate, and what it needs. No `attention_spec` or `kill_price`:
-the operator is at the keyboard and sees the market, and the harness kills it when
-honest gp/hr falls under half the floor. A recipe that `process_quote` links to a C
-relation ships through lane C, not here.
+`exit_per_action`, `items` = one entry, the recipe's main output (`output_item`, which
+the board and the harness's checks key on; never an input), `size.units_used`,
+`size.buy_limit` and `size.vol_constrained` all = `units_per_4h`, `capital_required` =
+units x entry, `per_1h_gp` = the harness `gp_hr`, `per_cycle_gp` = that x 4, `per_day_gp`
+= the same as `per_cycle_gp` (one 4h session a day). Copy them as they are: they're
+already whole numbers. `attention` says it's hands-on, at what rate, and what it needs.
+No `attention_spec` or `kill_price`: the operator is at the keyboard and sees the
+market, and the harness kills it when honest gp/hr falls under half the floor. P has
+no calibration factor: its number is a pace, so don't scale it. A recipe that
+`process_quote` links to a C relation ships through lane C, not here.
 
 ### U — Update / event speculation *(event-anchored)*
 *Claim:* game event E on date D will dislocate item X; position before/into it and
@@ -553,18 +559,18 @@ harness could paper-trade it mechanically.
 > other kind** — the validator tells you exactly what's wrong; fix and resubmit.
 
 ```yaml
-- id:               <F|B|V|C|U>-<item-slug>-<yyyymmdd>
-  archetype:        F | B | V | C | U
+- id:               <F|B|V|C|U|P>-<item-slug>-<yyyymmdd>
+  archetype:        F | B | V | C | U | P
   title:            <one line>
   thesis:           <the claim AND the mechanism — why the edge exists and persists>
-  items:            [{name, id, buy_limit, members}]   # every traded item, incl. all C legs; buy_limit = the ITEM's own GE limit (combo_quote leg buy_limit / lookup_item), never a conversion bound
+  items:            [{name, id, buy_limit, members}]   # every traded item, incl. all C legs (P: only its output_item); buy_limit = the ITEM's own GE limit (combo_quote leg buy_limit / lookup_item), never a conversion bound
   entry:            <precise human rule>
   exit:             <precise human rule>
   entry_price:      <gp; B: must be ≥ 10,000,000; C: input cost per conversion>
   exit_price:       <gp; C: post-tax output revenue per conversion>
   kill_price:       <gp or null; REQUIRED for B, V, U>
   horizon:          <expected hold / cycle time in words (B: the turnaround estimate)>
-  attention:        <REQUIRED for F, B, C: offer cadence, longest safe unattended window, reaction risk>
+  attention:        <REQUIRED for F, B, C, P: offer cadence, longest safe unattended window, reaction risk>
   attention_spec:   {checks_per_hour: <number>, max_unattended_hours: <number>}  # REQUIRED for F, B, C — the attention contract as numbers, agreeing with the prose; fractional checks_per_hour = less than hourly (0.25 = every 4h)
   capital_required: <gp to run one full cycle at target size; ≤ the research budget on its own; MUST equal size.units_used × entry_price (within 10%) — the harness vetoes a strategy whose size fields describe different batches>
   size:             # C: all three count CONVERSIONS, not items
@@ -589,7 +595,7 @@ harness could paper-trade it mechanically.
   relation_id:      1                               # C only, from list_relations
   recipe_id:        16                              # P only, from process_screen
   event:            {date: 2026-07-15, description: "…"}  # U only, within ±14d
-  eval_window_hours: 96                             # optional; defaults F 48, B 96, V 96, C 48, U 72
+  eval_window_hours: 96                             # optional; defaults F 48, B 96, V 96, C 48, U 72, P 48
 ```
 
 ---
@@ -652,9 +658,9 @@ harness could paper-trade it mechanically.
 - **Answer every assigned signal.** A signal without a verdict blocks the queue.
 - **State the attention contract.** Every F/B/C/P strategy's `attention` field must let
   the operator decide if it fits their day: cadence, longest safe unattended window,
-  reaction risk. Clear numeric rules a person can follow. Mirror it honestly in
-  `attention_spec` — those two numbers drive the operator's ping and must match
-  the prose, not flatter the strategy into "low-touch."
+  reaction risk. Clear numeric rules a person can follow. On F/B/C, mirror it honestly
+  in `attention_spec` — those two numbers drive the operator's ping and must match
+  the prose, not flatter the strategy into "low-touch." P has none.
 - **Quantity over noise is wrong — but underfilling an empty book is too.** Prefer
   3 strategies you'd stake gp on to 25 you wouldn't — and zero over one you
   wouldn't. Rank ruthlessly. When the brief's Open book shows free slots, filling
