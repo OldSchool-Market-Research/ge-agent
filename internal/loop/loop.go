@@ -104,7 +104,7 @@ var submitReportDef = json.RawMessage(`{
       "proposals": {
         "type": "array",
         "description": "Optional, at most 3. Something worth the operator's attention that you can't ship: a recipe missing from item_relations, a new lane, a method change, a tool you lack. Only for something new: the brief lists what's already on file. An operator decides; nothing here trades. Each object: kind (recipe, lane, method or tool); title (one line, under 120 characters); detail (what it is and why it would pay, under 1000 characters); evidence (the tool calls and numbers from this run behind it, under 1000 characters); recipe (kind recipe only: per one conversion, as item_relations would hold it, {inputs: [{item_id, qty}], outputs: [{item_id, qty}], reversible}, integers for item_id and qty). A malformed one is dropped and never costs you the report.",
-        "items": {"type": "object"}
+        "items": {"type": "object", "properties": {"kind": {"type": "string", "description": "recipe, lane, method or tool"}}}
       }
     },
     "required": ["markdown", "strategies"]

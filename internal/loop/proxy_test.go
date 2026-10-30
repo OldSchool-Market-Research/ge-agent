@@ -376,8 +376,13 @@ func TestProposalsSchemaStaysLoose(t *testing.T) {
 	if field.Type != "array" {
 		t.Errorf("proposals type must be array, got %v", field.Type)
 	}
-	if len(field.Items) != 1 || field.Items["type"] != "object" {
-		t.Errorf("proposals items must be a bare object, got %v", field.Items)
+	if field.Items["type"] != "object" {
+		t.Errorf("proposals items must be objects, got %v", field.Items)
+	}
+	for _, strict := range []string{`"required"`, `"enum"`} {
+		if strings.Contains(string(raw), strict) {
+			t.Errorf("proposals schema must not use %s: %s", strict, raw)
+		}
 	}
 }
 
