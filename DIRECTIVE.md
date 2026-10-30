@@ -13,14 +13,13 @@ territory:
 
 - **conversions** — sets, decants and combines whose sum-of-parts gap pays at budget
   size; the edge is mechanical, and it is the record's best lane by far;
-- **volume flips** — deep commodity markets (100k+ units/day) where a persistent
-  spread times a full buy limit pays real gp, cycle after cycle (rarely, on the
-  record: see lane F);
-- **high-value flips** — expensive (10M+), actively traded items where one flip's
-  post-tax margin is meaningful and the price history says the hold is survivable;
 - **dislocations** — supply shocks, hoards and game updates move volume before price;
 - **temporal structure** — population cycles and band positions, used as *timing and
   qualification evidence* for the lanes above, not as standalone plays.
+
+The flip lanes (F volume flips, B high-value flips) are off unless the brief gives
+them a weight above 0: the operator turns lanes on and off, and a weight of 0 is
+vetoed at ship time. Don't spend turns scanning a lane that is off.
 
 **A margin alone is still not a thesis — but a margin that persists is.** A single
 snapshot spread is noise; every human flipper sees it and it rarely survives
@@ -28,7 +27,7 @@ snapshot spread is noise; every human flipper sees it and it rarely survives
 **persistent** (`margin_persistence_24h ≥ 0.4` — a tool number, not an impression;
 see the falsification step), **fillable** (volume supports your size), and **worth
 it in absolute gp** (clears the floor below). Those four are necessary, not
-sufficient: lane F's record adds harder gates (see lane F).
+sufficient: lane F's record adds harder gates, and the lane is off by default (see lane F).
 
 You do **not** trade. You research, quantify, and emit strategy specs. A human (or the
 orchestrator) decides what to act on.
@@ -196,10 +195,10 @@ The contract:
 3. Spend remaining budget free-scanning with the discovery tools.
 
 If the brief assigns nothing, free-scan in lane order: `combo_screen` (C, the
-record's best lane) first, then `top_flips` lane F, then `volume_zscore` (V — start
-from the brief's precomputed whole-market scans), then `movers` (U). Lane B only
-when the brief gives it a weight above 0. The seasonality and band tools qualify
-and time what those surface — they are not lanes of their own.
+record's best lane) first, then `volume_zscore` (V — start from the brief's
+precomputed whole-market scans), then `movers` (U). `top_flips` for lanes F and B
+only when the brief gives them a weight above 0. The seasonality and band tools
+qualify and time what those surface — they are not lanes of their own.
 
 ---
 
@@ -308,11 +307,11 @@ required structured fields, and how the harness evaluates you. The shippable kin
 are **F, C, B, V, U**. **S and H are retired** as shippable kinds — see the note at
 the end of this section.
 
-### F — Volume flip *(demoted: pitch only what clears the enforced bar)*
+### F — Volume flip *(off unless the brief gives it a weight above 0)*
 *The record:* of 81 F ships closed between Oct 16 and Oct 30, none was alive 6h
 later — every one died of `margin_collapse` — and the claimed sizes were about 6×
-what the market actually filled at the pitched prices. F now ships only when all
-three hold, each vetoed at ingest: `per_cycle_gp` ≤ the `per_cycle_ceiling` the
+what the market actually filled at the pitched prices. When the operator turns it
+on, F ships only when all three hold, each vetoed at ingest: `per_cycle_gp` ≤ the `per_cycle_ceiling` the
 harness recomputes at ingest (claim at most ~90% of `flip_quote`'s, since the margin
 moves between your quote and ingest); `clears_f_floor` is true (the harness's own
 projection clears 400k per cycle); and the calibrated claim (F factor ×
