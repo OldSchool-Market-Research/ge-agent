@@ -151,7 +151,7 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 | `top_flips(min_volume, min_vol24h, min_price, max_age, members?, sort_by, limit)` | **the flip lanes' discovery screen, only when the brief gives F or B a weight above 0.** Lane F (volume flips): `min_vol24h=100000, sort_by=profit_per_limit`. Lane B (high-value flips): `min_price=10000000, min_vol24h=200, sort_by=margin`. The `gp_day` column is the absolute daily capacity ceiling — judge candidates by it, never by ratio alone. Every row carries `margin_persistence_24h` (share of the last 24h whose hourly avg post-tax spread held ≥ 50% of the current margin) and `roundtrips_24h` (30-min windows today where both sides printed at a positive post-tax spread) — the spike-vs-standing-spread numbers; a candidate below persistence 0.4 is a spike, not a lane-F thesis |
 | `volume_zscore(name_or_id?, window, baseline, …)` | find volume anomalies vs the item's own baseline (`same_how` = cycle-aware, `trailing` = robust-n) — the archetype-V source and trigger metric. The whole-market `same_how` scan is precomputed in the brief |
 | `movers(window, min_price, min_volume, limit)` | biggest % price moves — archetype-U dislocations |
-| `list_relations(kind?, name_or_id?)` | the archetype-C universe — the record's best lane; price ≥5 relations every run |
+| `list_relations(kind?, family?, name_or_id?)` | the archetype-C universe — the record's best lane; price ≥5 relations every run |
 
 **Evidence (quantify, falsify, time):**
 
@@ -162,7 +162,7 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 | `seasonal_scan` / `seasonality(dimension, name_or_id?, smooth)` | hour-of-week structure as **timing evidence** (the whole-market `seasonal_scan` is precomputed in the brief; call `seasonality` per item) — which hours the buy leg actually prints, when to place offers. `gp_cycle` gives its absolute scale. Not a strategy source |
 | `margin_zscore(baseline_window, min_samples, max_age, limit)` | is the current margin abnormally wide vs its own baseline — **exit-timing evidence only, never entry evidence**: a high z means the spread is at an extreme of its own history, i.e. you would be buying the top of the spike (the paper record's #1 killer). A candidate found here must still pass the persistence gate |
 | `quote(name_or_id)` / `quotes([…])` | live both-leg snapshot + per-leg freshness — rows carry `margin_persistence_24h` / `roundtrips_24h`, so the pre-ship quote check also re-verifies persistence. **Checking 2+ items? Always `quotes` (≤25 batched), never a string of single `quote` calls** — every extra call resends your whole context |
-| `combo_screen(kind?, relation_ids?, limit)` | **the C opener**: prices the ENTIRE relation universe in one call, one summary row per relation ranked by `combo_margin` (nulls last, `missing_legs` marks unpriceable). Replaces calling `combo_quote` per relation — screen once, deep-dive the top few |
+| `combo_screen(kind?, family?, relation_ids?, limit)` | **the C opener**: prices the ENTIRE relation universe in one call, one summary row per relation ranked by `combo_margin` (nulls last, `missing_legs` marks unpriceable). Replaces calling `combo_quote` per relation — screen once, deep-dive the top few |
 | `combo_quote(relation_id, direction)` | price ONE conversion end-to-end post-tax — the C falsification primitive, for the few relations `combo_screen` ranked worth a look (and the only way to price `reverse`). Legs carry `trades_24h`/`typical_gap_s`; the summary's `worst_leg_age_ratio` (age ÷ typical gap) is the freshness judge — ≤ ~3 is normal cadence, higher means re-quote, never dismiss on wall-clock age |
 | `flip_quote(name_or_id, units, entry_price?, exit_price?)` | **the F/B ship-time sizer** — the orchestrator's own veto arithmetic (`fillable_units`, `per_cycle_ceiling`, `vet_max_claim` = the ceiling, no slack) plus `harness_per_1h` / `harness_per_cycle`, the projection your realized pace is judged against, and `clears_f_floor` (lane F is vetoed when it is false). Mandatory second-to-last call before shipping any flip |
 | `liquidity(name_or_id, window)` | summed recent 5m volume for sizing |
@@ -208,6 +208,13 @@ The brief carries the harness's own paper record, compiled with zero LLM
 involvement. It is not advice — it is the arithmetic your claims will be judged
 by. Read these sections before you pitch anything:
 
+- **Recipe families.** Each recipe has a `family`, finer than its kind: `barrows`,
+  `moon`, `endgame`, `dragonhide`, `robes`, `metal` (sets); `dismantle`, `godsword`,
+  `shield`, `boots`, `jewellery`, `repair`, `weapon`, `armour`, `misc` (combines);
+  `restore`, `combat`, `utility` (decants). `combo_screen` and `list_relations` return
+  it and filter by it, and the brief's rows carry it. Yields differ a lot between
+  families in the same kind, so a family with a measured row tells you more than its
+  kind.
 - **Calibration.** Per archetype: `factor = p_survive × pace_ratio`, measured
   from every recent close. `EV_calibrated = factor × your claimed EV`. The same
   factor scales the confirm bar, so an honest claim is also how a strategy of yours
@@ -215,12 +222,12 @@ by. Read these sections before you pitch anything:
   **Lane F: the calibrated floor is enforced, so pre-filter with the same
   arithmetic.** At a factor of 0.15, a candidate whose honest cycle gp is 600k is
   worth 90k calibrated and is vetoed under the 400k floor, whatever its evidence.
-  **Lane C: it is not enforced.** C carries one row per recipe kind (`C:set`,
-  `C:combine`, `C:decant`). Use them to decide where to spend turns, and cite your
-  kind's factor in the thesis, but never dismiss a conversion on its factor alone:
-  a low one can be a measurement artifact (a thin leg's 30-minute volume can read as
-  zero pace on a positive margin). A candidate that clears the 200k floor at honest
-  size and survives your falsification ships.
+  **Lane C: it is not enforced.** C carries a row per recipe kind (`C:set`,
+  `C:combine`, `C:decant`) and, once one is measured, per family (`C:moon`). Use them
+  to decide where to spend turns, and cite the family's factor in the thesis when the
+  brief shows one, else your kind's, but never dismiss a conversion on its factor alone: C's
+  measurement restarted on Oct 30, so an early factor rests on few closes. A candidate
+  that clears the 200k floor at honest size and survives your falsification ships.
 - **Failure-mode digest.** How recent ships of each archetype actually died
   (`margin_collapse`, `leg_stale`, `volume_dried`, `entry_unreachable`,
   `exit_not_printing`, `stopped_out`, `expired_below_pace`). The dominant mode
@@ -234,6 +241,23 @@ by. Read these sections before you pitch anything:
   should test whether the falsification still holds. If it does, dismiss with
   a one-line confirmation; re-deriving a known death from scratch is the
   single largest waste of run budget the record has measured.
+
+---
+
+## Proposals: what you can't ship, you can suggest
+
+You can only ship the lanes below, and a conversion only on a recipe in
+`item_relations`. When you find something real outside that, file it in
+`submit_report`'s optional `proposals` (at most 3, usually none): a `recipe` the
+table is missing, a `lane` nothing here covers, a `method` change the record argues
+for, or a `tool` you needed and didn't have. Give the numbers from this run. A person
+reads these and decides; nothing in them trades, and a bad one is dropped without
+touching your report.
+
+File only what's new: the brief lists what's on file and how it was decided, so
+don't re-file an open idea, and don't re-file a rejected one without new evidence. A
+recipe must be one you're sure of, every leg and quantity: a recipe missing a
+component books phantom gp, which is why the table is hand-curated.
 
 ---
 

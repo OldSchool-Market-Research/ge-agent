@@ -15,6 +15,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/osrs-ge/ge-agent/internal/mcpbridge"
+	"github.com/osrs-ge/ge-agent/internal/strategy"
 )
 
 // fakeBackend stands in for the ge-mcp bridge: every call succeeds with a
@@ -343,5 +344,68 @@ func TestProxyCacheAgesFromCallStart(t *testing.T) {
 	p.callTool(ctx, callReq("top_flips", `{}`))
 	if got := len(b.AuditLog()); got != 2 {
 		t.Fatalf("an entry 61s past its start must refetch: %d backend calls", got)
+	}
+}
+
+// The Kimi CLI validates a tool call's arguments against this schema before the
+// call reaches the proxy, and rejects the whole call on a miss. A proposal is
+// optional, so its shape must stay in the description: a required field or an enum
+// here would let one bad proposal cost the report, past the reach of the 3-strike.
+func TestProposalsSchemaStaysLoose(t *testing.T) {
+	var def struct {
+		InputSchema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		} `json:"input_schema"`
+	}
+	if err := json.Unmarshal(submitReportDef, &def); err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := def.InputSchema.Properties["proposals"]
+	if !ok {
+		t.Fatal("submit_report has no proposals field")
+	}
+	var field struct {
+		Type  any            `json:"type"`
+		Items map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &field); err != nil {
+		t.Fatal(err)
+	}
+	// plain array: this schema goes to the model API too, and a shape it hasn't
+	// already accepted could fail every run on the first call
+	if field.Type != "array" {
+		t.Errorf("proposals type must be array, got %v", field.Type)
+	}
+	if field.Items["type"] != "object" {
+		t.Errorf("proposals items must be objects, got %v", field.Items)
+	}
+	for _, strict := range []string{`"required"`, `"enum"`} {
+		if strings.Contains(string(raw), strict) {
+			t.Errorf("proposals schema must not use %s: %s", strict, raw)
+		}
+	}
+}
+
+// A malformed proposal costs neither the report nor the record that it happened.
+func TestProxyCountsDroppedProposals(t *testing.T) {
+	h := testHandoff(t)
+	p := mustProxy(t, h)
+	ctx := context.Background()
+	args, _ := json.Marshal(map[string]any{"markdown": validReport, "strategies": []any{},
+		"proposals": []any{map[string]any{"kind": "lane", "title": "t", "detail": "d"}, map[string]any{"kind": "nonsense", "title": "t", "detail": "d"}}})
+	res, err := p.submit(ctx, callReq("submit_report", string(args)))
+	if err != nil || res.IsError {
+		t.Fatalf("report rejected over a proposal: %v / %s", err, resultText(t, res))
+	}
+	raw, err := os.ReadFile(strings.TrimSuffix(h.ReportPath, ".md") + ".strategies.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sc strategy.Sidecar
+	if err := json.Unmarshal(raw, &sc); err != nil {
+		t.Fatal(err)
+	}
+	if len(sc.Proposals) != 1 || sc.ProposalsDropped != 1 {
+		t.Errorf("proposals %d dropped %d, want 1 and 1", len(sc.Proposals), sc.ProposalsDropped)
 	}
 }

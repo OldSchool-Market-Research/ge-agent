@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // One valid fixture per archetype; every test mutates a copy.
@@ -749,4 +750,59 @@ func TestParseKeepsTitleAndStillRejectsUnnameable(t *testing.T) {
 	if _, reason := Parse(raw); !strings.Contains(reason, "title: required") {
 		t.Fatalf("unnameable strategy: got %q, want a title rejection", reason)
 	}
+}
+
+func TestParseProposals(t *testing.T) {
+	recipe := `{"kind":"recipe","title":"Ranger boots set","detail":"d","evidence":"e","recipe":{"inputs":[{"item_id":1,"qty":2}],"outputs":[{"item_id":3,"qty":1}]}}`
+	t.Run("absent", func(t *testing.T) {
+		for _, raw := range []string{"", "null"} {
+			if list, dropped := ParseProposals(json.RawMessage(raw)); list != nil || dropped != 0 {
+				t.Errorf("%q: %v %d", raw, list, dropped)
+			}
+		}
+	})
+	t.Run("valid kinds", func(t *testing.T) {
+		list, dropped := ParseProposals(json.RawMessage(`[` + recipe + `,{"kind":"lane","title":"t","detail":"d","evidence":"e"}]`))
+		if len(list) != 2 || dropped != 0 || list[0].Recipe == nil || list[1].Recipe != nil {
+			t.Fatalf("%+v %d", list, dropped)
+		}
+	})
+	t.Run("a bad one is dropped, never fatal", func(t *testing.T) {
+		cases := []string{
+			`{"kind":"nonsense","title":"t","detail":"d"}`,
+			`{"kind":"lane","title":"","detail":"d"}`,
+			`{"kind":"lane","title":"t","detail":"   "}`,
+			`{"kind":"recipe","title":"no legs","detail":"d"}`,
+			`{"kind":"recipe","title":"t","detail":"d","recipe":{"inputs":[{"item_id":0,"qty":1}],"outputs":[{"item_id":3,"qty":1}]}}`,
+			`{"kind":"recipe","title":"t","detail":"d","recipe":{"inputs":[{"item_id":1,"qty":0}],"outputs":[{"item_id":3,"qty":1}]}}`,
+			`{"kind":"lane","title":5,"detail":"d"}`,
+			`"not an object"`,
+		}
+		for _, c := range cases {
+			list, dropped := ParseProposals(json.RawMessage(`[` + c + `,` + recipe + `]`))
+			if len(list) != 1 || dropped != 1 {
+				t.Errorf("%s: kept %d, dropped %d", c, len(list), dropped)
+			}
+		}
+		if list, dropped := ParseProposals(json.RawMessage(`{"not":"an array"}`)); list != nil || dropped != 1 {
+			t.Errorf("not an array: %v %d", list, dropped)
+		}
+	})
+	t.Run("capped and clipped", func(t *testing.T) {
+		list, dropped := ParseProposals(json.RawMessage(`[` + recipe + `,` + recipe + `,` + recipe + `,` + recipe + `]`))
+		if len(list) != maxProposals || dropped != 1 {
+			t.Fatalf("%d %d", len(list), dropped)
+		}
+		long, _ := json.Marshal(strings.Repeat("é", 2000))
+		list, _ = ParseProposals(json.RawMessage(`[{"kind":"tool","title":` + string(long) + `,"detail":` + string(long) + `,"evidence":` + string(long) + `}]`))
+		if len(list) != 1 || len([]rune(list[0].Title)) != maxProposalTitle || len([]rune(list[0].Detail)) != maxProposalDetail || !utf8.ValidString(list[0].Title) {
+			t.Fatalf("clip: %d %d", len([]rune(list[0].Title)), len([]rune(list[0].Detail)))
+		}
+	})
+	t.Run("a stray recipe on another kind goes", func(t *testing.T) {
+		list, _ := ParseProposals(json.RawMessage(`[{"kind":"method","title":"t","detail":"d","recipe":{"inputs":[{"item_id":1,"qty":1}],"outputs":[{"item_id":3,"qty":1}]}}]`))
+		if len(list) != 1 || list[0].Recipe != nil {
+			t.Fatalf("%+v", list)
+		}
+	})
 }

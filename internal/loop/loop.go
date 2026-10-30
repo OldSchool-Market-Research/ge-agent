@@ -100,6 +100,11 @@ var submitReportDef = json.RawMessage(`{
           "verdict": {"type": "string", "enum": ["shipped","dismissed"]},
           "reason": {"type": "string", "description": "for shipped: which strategy id; for dismissed: what killed it"}
         }, "required": ["signal_id","verdict","reason"]}
+      },
+      "proposals": {
+        "type": "array",
+        "description": "Optional, at most 3. Something worth the operator's attention that you can't ship: a recipe missing from item_relations, a new lane, a method change, a tool you lack. Only for something new: the brief lists what's already on file. An operator decides; nothing here trades. Each object: kind (recipe, lane, method or tool); title (one line, under 120 characters); detail (what it is and why it would pay, under 1000 characters); evidence (the tool calls and numbers from this run behind it, under 1000 characters); recipe (kind recipe only: per one conversion, as item_relations would hold it, {inputs: [{item_id, qty}], outputs: [{item_id, qty}], reversible}, integers for item_id and qty). A malformed one is dropped and never costs you the report.",
+        "items": {"type": "object", "properties": {"kind": {"type": "string", "description": "recipe, lane, method or tool"}}}
       }
     },
     "required": ["markdown", "strategies"]
@@ -165,6 +170,7 @@ func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, 
 		Markdown       string          `json:"markdown"`
 		Strategies     json.RawMessage `json:"strategies"`
 		SignalVerdicts json.RawMessage `json:"signal_verdicts"`
+		Proposals      json.RawMessage `json:"proposals"`
 	}
 	if err := json.Unmarshal(input, &args); err != nil || strings.TrimSpace(args.Markdown) == "" {
 		return "", "markdown must be a non-empty string"
@@ -180,12 +186,13 @@ func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, 
 	if reason != "" {
 		return "", reason
 	}
+	proposals, dropped := strategy.ParseProposals(args.Proposals)
 	if err := report.Write(reportPath, args.Markdown, audit.AuditLog()); err != nil {
 		return "", "write failed: " + err.Error()
 	}
 	if err := report.WriteSidecar(reportPath, strategy.Sidecar{
 		RunStartedAt: runStart, ReportPath: reportPath, Strategies: strategies,
-		SignalVerdicts: verdicts,
+		SignalVerdicts: verdicts, Proposals: proposals, ProposalsDropped: dropped,
 	}); err != nil {
 		return "", "sidecar write failed: " + err.Error()
 	}
