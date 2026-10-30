@@ -34,7 +34,7 @@ var submitReportDef = json.RawMessage(`{
           "type": "object",
           "properties": {
             "id": {"type": "string", "description": "<archetype>-<item-slug>-<yyyymmdd>, e.g. F-adamantite-bar-20260720"},
-            "archetype": {"type": "string", "enum": ["F","B","V","C","U"]},
+            "archetype": {"type": "string", "enum": ["F","B","V","C","U","P"]},
             "title": {"type": "string"},
             "thesis": {"type": "string"},
             "items": {"type": "array", "items": {"type": "object", "properties": {
@@ -84,6 +84,7 @@ var submitReportDef = json.RawMessage(`{
               "price": {"type": "integer", "description": "gp per unit"}
             }, "required": ["item_id","name","side","qty","price"]}},
             "relation_id": {"type": ["integer","null"], "description": "C ONLY, required for C: the item_relations row from list_relations"},
+            "recipe_id": {"type": ["integer","null"], "description": "P ONLY, required for P: the process_recipes row from process_screen"},
             "event": {"type": ["object","null"], "description": "U ONLY, required for U: the game event this trades (date within ±14 days)", "properties": {
               "date": {"type": "string", "description": "YYYY-MM-DD UTC"}, "description": {"type": "string"}
             }, "required": ["date","description"]},
