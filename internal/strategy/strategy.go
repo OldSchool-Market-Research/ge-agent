@@ -137,6 +137,7 @@ type Strategy struct {
 	Direction       *string     `json:"direction,omitempty"`         // V, U: ride | fade
 	Legs            []Leg       `json:"legs,omitempty"`              // C
 	RelationID      *int        `json:"relation_id,omitempty"`       // C
+	RecipeID        *int        `json:"recipe_id,omitempty"`         // P only: the process_recipes row
 	Event           *Event      `json:"event,omitempty"`             // U
 	EvalWindowHours *int        `json:"eval_window_hours,omitempty"` // required for H (168-672); optional elsewhere
 }
@@ -197,8 +198,8 @@ const (
 )
 
 var (
-	idRe        = regexp.MustCompile(`^[FBSVCUH]-[a-z0-9-]+-\d{8}$`)
-	archetypes  = map[string]bool{"F": true, "B": true, "S": true, "V": true, "C": true, "U": true, "H": true}
+	idRe        = regexp.MustCompile(`^[FBSVCUHP]-[a-z0-9-]+-\d{8}$`)
+	archetypes  = map[string]bool{"F": true, "B": true, "S": true, "V": true, "C": true, "U": true, "H": true, "P": true}
 	confidences = map[string]bool{"high": true, "medium": true, "low": true, "insufficient_history": true}
 	dateRe      = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 )
@@ -218,6 +219,10 @@ const (
 	FloorFPerCycleGp = 400_000
 	FloorBPerCycleGp = 100_000
 	FloorCPerCycleGp = 200_000
+	// FloorPPer1hGp is per hour of play, not per cycle: a recipe costs the operator's
+	// time, so it's held to the bar they set for what's worth their time (the
+	// orchestrator's ping bar, 250k gp/hr).
+	FloorPPer1hGp    = 250_000
 	MinBEntryPriceGp = 10_000_000
 )
 
@@ -483,9 +488,9 @@ func Validate(list []Strategy, now time.Time) string {
 		}
 		switch {
 		case !idRe.MatchString(s.ID):
-			return p("id", `must match ^[FBSVCUH]-<item-slug>-<yyyymmdd>$ (e.g. "F-adamantite-bar-20260720")`)
+			return p("id", `must match ^[FBSVCUHP]-<item-slug>-<yyyymmdd>$ (e.g. "C-ahrims-armour-set-20260720")`)
 		case !archetypes[s.Archetype]:
-			return p("archetype", "must be one of F | B | V | C | U (S and H are retired)")
+			return p("archetype", "must be one of F | B | V | C | U | P (S and H are retired)")
 		case !strings.HasPrefix(s.ID, s.Archetype+"-"):
 			return p("id", "must start with the strategy's archetype letter")
 		case strings.TrimSpace(s.Title) == "":
@@ -567,7 +572,37 @@ func validateKind(i int, s Strategy, now time.Time, p func(string, string) strin
 		}
 		return ""
 	}
+	if s.Archetype != "P" && s.RecipeID != nil {
+		return p("recipe_id", "only valid for archetype P")
+	}
 	switch s.Archetype {
+	case "P":
+		if s.RecipeID == nil || *s.RecipeID <= 0 {
+			return p("recipe_id", "required for archetype P: the recipe_id from process_screen")
+		}
+		if s.EntryPrice >= s.ExitPrice {
+			return p("entry_price", "must be below exit_price for archetype P: copy entry_per_action and exit_per_action from process_quote's meta.harness")
+		}
+		if strings.TrimSpace(s.Attention) == "" {
+			return p("attention", "required for archetype P: hands-on play at what rate, and any skill or quest it needs")
+		}
+		if s.ExpectedValue.Per1hGp < FloorPPer1hGp {
+			return p("expected_value.per_1h_gp", fmt.Sprintf("must be >= %d for archetype P, per hour of play: below the floor it isn't worth the operator's time, so dismiss it", FloorPPer1hGp))
+		}
+		for _, f := range []string{
+			forbid(s.AttentionSpec != nil, "attention_spec", "F/B/C"),
+			forbid(s.KillPrice != nil, "kill_price", "B/V/U"),
+			forbid(s.BuyWindow != nil || s.SellWindow != nil, "buy_window/sell_window", "S"),
+			forbid(s.Trigger != nil, "trigger", "V"),
+			forbid(s.Direction != nil, "direction", "V/U"),
+			forbid(len(s.Legs) > 0, "legs", "C"),
+			forbid(s.RelationID != nil, "relation_id", "C"),
+			forbid(s.Event != nil, "event", "U"),
+		} {
+			if f != "" {
+				return f
+			}
+		}
 	case "F":
 		if s.EntryPrice >= s.ExitPrice {
 			return p("entry_price", "must be below exit_price for archetype F (the buy offer and the sell offer)")

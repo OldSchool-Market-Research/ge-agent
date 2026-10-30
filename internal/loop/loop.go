@@ -34,7 +34,7 @@ var submitReportDef = json.RawMessage(`{
           "type": "object",
           "properties": {
             "id": {"type": "string", "description": "<archetype>-<item-slug>-<yyyymmdd>, e.g. F-adamantite-bar-20260720"},
-            "archetype": {"type": "string", "enum": ["F","B","V","C","U"]},
+            "archetype": {"type": "string", "enum": ["F","B","V","C","U","P"]},
             "title": {"type": "string"},
             "thesis": {"type": "string"},
             "items": {"type": "array", "items": {"type": "object", "properties": {
@@ -43,12 +43,12 @@ var submitReportDef = json.RawMessage(`{
             }, "required": ["name","id"]}},
             "entry": {"type": "string", "description": "precise human rule"},
             "exit": {"type": "string", "description": "precise human rule"},
-            "entry_price": {"type": "integer", "description": "the buy trigger in gp (plain integer). For C: total input cost per conversion"},
-            "exit_price": {"type": "integer", "description": "the sell target in gp (plain integer). For C: post-tax output revenue per conversion"},
+            "entry_price": {"type": "integer", "description": "the buy trigger in gp (plain integer). For C: total input cost per conversion. For P: entry_per_action"},
+            "exit_price": {"type": "integer", "description": "the sell target in gp (plain integer). For C: post-tax output revenue per conversion. For P: exit_per_action"},
             "kill_price": {"type": ["integer","null"], "description": "price of items[0] beyond which the strategy is dead; null only where the archetype allows (required for B, V, U)"},
             "horizon": {"type": "string", "description": "expected hold / cycle time in words (B: the turnaround estimate)"},
-            "attention": {"type": "string", "description": "REQUIRED for F, B, C: the execution contract — offer cadence, longest safe unattended window, reaction risk. The operator decides what fits their day"},
-            "attention_spec": {"type": ["object","null"], "description": "REQUIRED for F, B, C: the attention contract as two JSON numbers (NOT quoted strings), agreeing with the attention prose", "properties": {
+            "attention": {"type": "string", "description": "REQUIRED for F, B, C, P: the execution contract — offer cadence, longest safe unattended window, reaction risk. The operator decides what fits their day"},
+            "attention_spec": {"type": ["object","null"], "description": "REQUIRED for F, B, C, forbidden for P: the attention contract as two JSON numbers (NOT quoted strings), agreeing with the attention prose", "properties": {
               "checks_per_hour": {"type": "number", "description": "GE visits per hour while running, > 0 and <= 12; fractional means less than hourly (0.25 = one check every 4h). Write 0.5, not \"0.5\""},
               "max_unattended_hours": {"type": "number", "description": "longest safe unattended window in hours, > 0 and <= 168"}
             }, "required": ["checks_per_hour","max_unattended_hours"]},
@@ -84,6 +84,7 @@ var submitReportDef = json.RawMessage(`{
               "price": {"type": "integer", "description": "gp per unit"}
             }, "required": ["item_id","name","side","qty","price"]}},
             "relation_id": {"type": ["integer","null"], "description": "C ONLY, required for C: the item_relations row from list_relations"},
+            "recipe_id": {"type": ["integer","null"], "description": "P ONLY, required for P: the process_recipes row from process_screen"},
             "event": {"type": ["object","null"], "description": "U ONLY, required for U: the game event this trades (date within ±14 days)", "properties": {
               "date": {"type": "string", "description": "YYYY-MM-DD UTC"}, "description": {"type": "string"}
             }, "required": ["date","description"]},

@@ -13,6 +13,8 @@ territory:
 
 - **conversions** — sets, decants and combines whose sum-of-parts gap pays at budget
   size; the edge is mechanical, and it is the record's best lane by far;
+- **processing** — recipes that pay for a player's clicks (leather, planks, potions),
+  judged in gp per hour of play;
 - **dislocations** — supply shocks, hoards and game updates move volume before price;
 - **temporal structure** — population cycles and band positions, used as *timing and
   qualification evidence* for the lanes above, not as standalone plays.
@@ -51,11 +53,12 @@ useless no matter how good the edge:
   more GE visits than some assumed cadence — instead every strategy MUST state its
   attention contract in the `attention` field: offer cadence, the longest safe
   unattended window, and what (if anything) a price move demands in reaction. The
-  operator picks what fits their day; you never assume it for them. The
+  operator picks what fits their day; you never assume it for them. On F, B and C the
   `attention_spec` field mirrors that contract as two numbers (`checks_per_hour`,
   `max_unattended_hours`) — the harness pings the operator only for strategies
   whose numbers fit their day, so a spec that disagrees with the prose either
-  spams them or silences a strategy they wanted to see.
+  spams them or silences a strategy they wanted to see. P has no `attention_spec`:
+  it's hands-on, so the validator rejects one.
 - **Reliability over upside.** They are building trust in this system before staking
   real gp. The boring, repeatable, high-confidence edge beats the bigger speculative
   one. Three strategies that paper-confirm are worth more than ten that die in a
@@ -81,7 +84,7 @@ fill it, it isn't profit. And remember the harness paper-trades you **with a
 self-impact haircut** (≈15% volume participation, 0.5% slippage per side) — a strategy
 that only works at 100% of observed volume at exact observed prices is fantasy.
 
-**The floors are absolute: F must clear ≥400,000 gp per cycle (100k gp/hr), C must
+**The floors are absolute: P must clear ≥250,000 gp per hour of play, F must clear ≥400,000 gp per cycle (100k gp/hr), C must
 clear ≥200,000 gp per cycle, at honest size — or it does not ship.** Dismiss
 below-floor candidates no matter how pretty the ratio. ROI%, amplitude% and margin%
 are display-only context — a 300% ROI on 400gp of capital is noise; a 1% edge that
@@ -168,13 +171,13 @@ Use these; do not ask for raw SQL. Each maps to a validated query in
 | `liquidity(name_or_id, window)` | summed recent 5m volume for sizing |
 | `lookup_item(query, limit)` | resolve a name → id (+ `buy_limit`, `members`) |
 
-**Processing (report section 6 only, never a strategy; 2 calls per run):**
+**Processing (lane P's source, and report section 6):**
 
 | Tool | Use it to… |
 |---|---|
 | `process_top(window, metric, min_coverage_pct, limit)` | recipes that paid *consistently* over the window (median, p25, % hours positive, hours in the top 10, last-24h vs window avg) from hourly snapshots |
 | `process_screen(category?, throughput?, sort, limit)` | live gp/hr of every processing recipe (player-time money-makers: planks, keels, potions, crates…) with the rates that cap it: `effective_actions_per_hour` vs `actions_per_hour` / `limit_actions_per_hour` / `market_actions_per_hour` |
-| `process_quote(recipe)` / `process_history(recipe, …)` | one recipe's legs + notes / its trend — not needed for the watch |
+| `process_quote(recipe)` / `process_history(recipe, …)` | one recipe's legs, notes and `meta.harness` (the orchestrator's arithmetic: your P strategy's prices, size and gp/hr) / its trend. Last call before shipping a P |
 
 ---
 
@@ -195,7 +198,7 @@ The contract:
 3. Spend remaining budget free-scanning with the discovery tools.
 
 If the brief assigns nothing, free-scan in lane order: `combo_screen` (C, the
-record's best lane) first, then `volume_zscore` (V — start from the brief's
+record's best lane) first, then `process_screen` (P), then `volume_zscore` (V — start from the brief's
 precomputed whole-market scans), then `movers` (U). `top_flips` for lanes F and B
 only when the brief gives them a weight above 0. The seasonality and band tools
 qualify and time what those surface — they are not lanes of their own.
@@ -215,7 +218,7 @@ by. Read these sections before you pitch anything:
   it and filter by it, and the brief's rows carry it. Yields differ a lot between
   families in the same kind, so a family with a measured row tells you more than its
   kind.
-- **Calibration.** Per archetype: `factor = p_survive × pace_ratio`, measured
+- **Calibration.** Per archetype except P: `factor = p_survive × pace_ratio`, measured
   from every recent close. `EV_calibrated = factor × your claimed EV`. The same
   factor scales the confirm bar, so an honest claim is also how a strategy of yours
   ever gets confirmed.
@@ -301,6 +304,12 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
      before judging: `per_cycle_gp = combo_margin × min(units_bound_per_4h, the min
      over legs of ~15% of that leg's 4h volume ÷ its qty)` — "small per conversion" is never a dismissal
      reason; a 32k/conversion edge at 100 conversions/4h is a 3.2M/cycle candidate.
+   - **P**: does `process_quote`'s `meta.harness` say `shippable`? That's the vet's whole
+     test: the floor at honest size, at least 80% of the last day's hourly snapshots at
+     the floor (`hours_at_floor_24h` of `hours_24h`, with at least 12 hours), and no leg
+     older than 6h (`max_leg_age_s`). Past that, is a leg over an hour old propping up
+     the margin (`slow_age_s`)? Which rate caps it, and is that rate real? Any skill,
+     quest or unlock it needs goes in the risks: the table doesn't curate them.
    - **U**: is the event real and dated? What's the base rate for this event class
      moving this item? Ride and fade cannot both be your thesis — pick one and say why.
    If the disconfirming check fails, **discard the hypothesis** — don't soften it.
@@ -319,7 +328,7 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
 6. **Spec.** Emit the strategy object with the kind-specific structured fields
    (schema below) — the harness paper-trades exactly what you write there.
 7. **Rank.** Order by absolute post-tax gp/day. Dismiss anything below its lane
-   floor (F 400k, C 200k gp/cycle) regardless of its ratios. Confidence must be
+   floor (F 400k, C 200k gp/cycle, P 250k gp per hour of play) regardless of its ratios. Confidence must be
    *earned by evidence* (sample size + lookback covered), not asserted.
 
 ---
@@ -328,7 +337,7 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
 
 Every strategy is exactly one of these kinds. The letter drives the id prefix, the
 required structured fields, and how the harness evaluates you. The shippable kinds
-are **F, C, B, V, U**, each only while the brief's weight for it is above 0. **S and H
+are **F, C, B, V, U, P**, each only while the brief's weight for it is above 0. **S and H
 are retired** as shippable kinds — see the note at
 the end of this section.
 
@@ -398,6 +407,28 @@ time (place offers, convert at a bank, relist), and between batches it sits safe
 unattended — say so in numbers. Surface skill/quest gates from `notes` in the risks.
 The tightest leg's buy limit and volume bound throughput. Judge leg freshness by
 `worst_leg_age_ratio`, not wall clock (see the method's C check).
+
+### P — Processing recipe *(gp per hour of play)*
+*Claim:* recipe R pays at least 250,000 gp per hour of play at honest size, and has
+for most of the last day. This is the only lane where the money costs the operator's
+time, so it's measured differently: its number is what an hour of clicking pays, and
+it never adds up with what the passive lanes earn.
+*Find:* `process_screen` and `process_top` rank every recipe; `process_quote(recipe)`
+then gives `meta.harness`, the orchestrator's own arithmetic. The screen's `gp_hr`
+assumes all of the market's volume at exact prices, and the harness caps at 15% of the
+market and the research budget: a recipe reading 3M gp/hr can be worth 150k. Judge by
+the harness, and call `process_quote` last before shipping.
+*Spec:* `recipe_id`, with `entry_price` = `entry_per_action`, `exit_price` =
+`exit_per_action`, `items` = one entry, the recipe's main output (`output_item`, which
+the board and the harness's checks key on; never an input), `size.units_used`,
+`size.buy_limit` and `size.vol_constrained` all = `units_per_4h`, `capital_required` =
+units x entry, `per_1h_gp` = the harness `gp_hr`, `per_cycle_gp` = that x 4, `per_day_gp`
+= the same as `per_cycle_gp` (one 4h session a day). Copy them as they are: they're
+already whole numbers. `attention` says it's hands-on, at what rate, and what it needs.
+No `attention_spec` or `kill_price`: the operator is at the keyboard and sees the
+market, and the harness kills it when honest gp/hr falls under half the floor. P has
+no calibration factor: its number is a pace, so don't scale it. A recipe that
+`process_quote` links to a C relation ships through lane C, not here.
 
 ### U — Update / event speculation *(event-anchored)*
 *Claim:* game event E on date D will dislocate item X; position before/into it and
@@ -483,24 +514,20 @@ is stored and shown verbatim to future runs as the candidate's obituary.
 
 ### 6. Processing watch
 Processing recipes are player-time money-makers (the operator clicks through
-them: planks, keels, potions, crates). The harness can't paper-trade player
-time, so they are **never strategies** and **never candidates**: not in the
-strategies array, not in the Header's scanned/survived counts, not the
-Digest's largest-gp line, not in Discarded. A player's gp/hr while clicking
-can't be compared with a strategy's passive gp/day, so a big recipe number
-says nothing about your F/C/B work. Some recipes are the same conversion as a
-C relation (sets, godswords, GWD breakdowns): those ship only through the C
-lane, with combo_screen / combo_quote numbers and a relation_id from those
-tools.
-A recipe_id is never a relation_id, and no process_* number goes into a
-strategy.
+them: planks, keels, potions, crates). The best ship as lane P; this section is the
+watch over all of them, and what P candidates come from. A player's gp/hr while
+clicking can't be compared with a strategy's passive gp/day, so keep them apart: a
+recipe's number stays out of the Digest's largest-gp line and doesn't count against
+your other lanes. Some recipes are the same conversion as a C relation (sets,
+godswords, GWD breakdowns): those ship only through the C lane, with combo_screen /
+combo_quote numbers and a relation_id from those tools. A recipe_id is never a
+relation_id, and no process_* number goes into a strategy of another lane.
 
-- **Exactly two calls, after your strategy research, in the same turn as
-  your final ship-time quote** (they aren't strategy calls, so they don't
-  break the last-two-calls rule), or as your last calls before
-  submit_report if nothing ships: `process_top(window=7d, limit=10)` and
-  `process_screen(limit=25)`. Write this section from those two results; don't
-  call more process_* tools.
+- **Call `process_top(window=7d, limit=10)` and `process_screen(limit=25)`** every run,
+  after your other strategy research, and write this section from those two results.
+  Each P candidate you pursue also takes `process_quote`, plus `process_history` if
+  the trend matters. These aren't ship-time calls for other lanes, so they don't break
+  the last-two-calls rule.
 - A table of the top 5 by median gp/hr from `process_top`: recipe, median,
   p25, % hours positive, and what caps it, taken from the matching
   `process_screen` row: the rate among `actions_per_hour` (player speed),
@@ -532,18 +559,18 @@ harness could paper-trade it mechanically.
 > other kind** — the validator tells you exactly what's wrong; fix and resubmit.
 
 ```yaml
-- id:               <F|B|V|C|U>-<item-slug>-<yyyymmdd>
-  archetype:        F | B | V | C | U
+- id:               <F|B|V|C|U|P>-<item-slug>-<yyyymmdd>
+  archetype:        F | B | V | C | U | P
   title:            <one line>
   thesis:           <the claim AND the mechanism — why the edge exists and persists>
-  items:            [{name, id, buy_limit, members}]   # every traded item, incl. all C legs; buy_limit = the ITEM's own GE limit (combo_quote leg buy_limit / lookup_item), never a conversion bound
+  items:            [{name, id, buy_limit, members}]   # every traded item, incl. all C legs (P: only its output_item); buy_limit = the ITEM's own GE limit (combo_quote leg buy_limit / lookup_item), never a conversion bound
   entry:            <precise human rule>
   exit:             <precise human rule>
   entry_price:      <gp; B: must be ≥ 10,000,000; C: input cost per conversion>
   exit_price:       <gp; C: post-tax output revenue per conversion>
   kill_price:       <gp or null; REQUIRED for B, V, U>
   horizon:          <expected hold / cycle time in words (B: the turnaround estimate)>
-  attention:        <REQUIRED for F, B, C: offer cadence, longest safe unattended window, reaction risk>
+  attention:        <REQUIRED for F, B, C, P: offer cadence, longest safe unattended window, reaction risk>
   attention_spec:   {checks_per_hour: <number>, max_unattended_hours: <number>}  # REQUIRED for F, B, C — the attention contract as numbers, agreeing with the prose; fractional checks_per_hour = less than hourly (0.25 = every 4h)
   capital_required: <gp to run one full cycle at target size; ≤ the research budget on its own; MUST equal size.units_used × entry_price (within 10%) — the harness vetoes a strategy whose size fields describe different batches>
   size:             # C: all three count CONVERSIONS, not items
@@ -566,8 +593,9 @@ harness could paper-trade it mechanically.
   direction:        ride | fade                     # V and U only
   legs:             [{item_id, name, side: buy|sell, qty, price}]  # C only, from combo_quote
   relation_id:      1                               # C only, from list_relations
+  recipe_id:        16                              # P only, from process_screen
   event:            {date: 2026-07-15, description: "…"}  # U only, within ±14d
-  eval_window_hours: 96                             # optional; defaults F 48, B 96, V 96, C 48, U 72
+  eval_window_hours: 96                             # optional; defaults F 48, B 96, V 96, C 48, U 72, P 48
 ```
 
 ---
@@ -609,7 +637,7 @@ harness could paper-trade it mechanically.
 - **Falsify, don't confirm.** Default to looking for the reason a pattern is noise. A
   strategy you couldn't kill is worth more than ten you only cheerled.
 - **The floors are absolute — and they are disqualifiers, not targets.** Below
-  400k gp/cycle (F) / 200k (C) at honest size does not ship, whatever the ROI%.
+  400k gp/cycle (F) / 200k (C) / 250k gp per hour of play (P) at honest size does not ship, whatever the ROI%.
   Rank in gp; ratios are context. Claims hugging the floor when the screen showed
   bigger edges is a failed scan, not prudence.
 - **A snapshot margin is not a persistent margin.** The single most likely flip
@@ -628,11 +656,11 @@ harness could paper-trade it mechanically.
   confidence label to sample size and the lookback the data actually covers.
 - **Never recompute margin; never zero-fill prices.** (Constraints 1–2 above.)
 - **Answer every assigned signal.** A signal without a verdict blocks the queue.
-- **State the attention contract.** Every F/B/C strategy's `attention` field must let
+- **State the attention contract.** Every F/B/C/P strategy's `attention` field must let
   the operator decide if it fits their day: cadence, longest safe unattended window,
-  reaction risk. Clear numeric rules a person can follow. Mirror it honestly in
-  `attention_spec` — those two numbers drive the operator's ping and must match
-  the prose, not flatter the strategy into "low-touch."
+  reaction risk. Clear numeric rules a person can follow. On F/B/C, mirror it honestly
+  in `attention_spec` — those two numbers drive the operator's ping and must match
+  the prose, not flatter the strategy into "low-touch." P has none.
 - **Quantity over noise is wrong — but underfilling an empty book is too.** Prefer
   3 strategies you'd stake gp on to 25 you wouldn't — and zero over one you
   wouldn't. Rank ruthlessly. When the brief's Open book shows free slots, filling

@@ -806,3 +806,51 @@ func TestParseProposals(t *testing.T) {
 		}
 	})
 }
+
+const validP = `{
+  "id": "P-making-red-leather-20261030", "archetype": "P",
+  "title": "Tan red dragonhide", "thesis": "the buy limit binds at 550 an hour and the spread holds",
+  "items": [{"name": "Red dragon leather", "id": 2507, "buy_limit": 2200, "members": true}],
+  "entry": "buy hides and pay the tanner", "exit": "sell the leather",
+  "entry_price": 9575, "exit_price": 11165,
+  "horizon": "one 4h buy-limit window of play", "capital_required": 21065000,
+  "size": {"buy_limit": 2200, "vol_constrained": 2200, "units_used": 2200},
+  "expected_value": {"per_cycle_gp": 3267000, "per_1h_gp": 816750, "per_day_gp": 3267000, "roi_pct": 15.5},
+  "confidence": "medium", "confidence_why": "24 hourly snapshots, all positive", "evidence": "process_quote",
+  "invalidation": "honest gp/hr under 125k", "risks": ["requires_crafting_guild"], "paper_trade": "pace against the harness",
+  "attention": "hands-on: 550 actions an hour at the tanner, stop any time",
+  "recipe_id": 16
+}`
+
+func TestValidateP(t *testing.T) {
+	parse := func(raw string) string {
+		_, reason := Parse(json.RawMessage(`[` + raw + `]`))
+		return reason
+	}
+	if reason := parse(validP); reason != "" {
+		t.Fatalf("valid P rejected: %s", reason)
+	}
+	cases := []struct{ name, from, to, want string }{
+		{"no recipe", `"recipe_id": 16`, `"recipe_id": null`, "recipe_id"},
+		{"bad recipe", `"recipe_id": 16`, `"recipe_id": 0`, "recipe_id"},
+		{"under the floor", `"per_1h_gp": 816750`, `"per_1h_gp": 249999`, "per_1h_gp"},
+		{"no attention", `"attention": "hands-on: 550 actions an hour at the tanner, stop any time",`, ``, "attention"},
+		{"no margin", `"entry_price": 9575`, `"entry_price": 11165`, "entry_price"},
+		{"attention spec is for passive lanes", `"recipe_id": 16`, `"recipe_id": 16, "attention_spec": {"checks_per_hour": 1, "max_unattended_hours": 4}`, "attention_spec"},
+		{"no stop on a hands-on recipe", `"recipe_id": 16`, `"recipe_id": 16, "kill_price": 9000`, "kill_price"},
+		{"no recipe legs", `"recipe_id": 16`, `"recipe_id": 16, "relation_id": 4`, "relation_id"},
+	}
+	for _, c := range cases {
+		raw := strings.Replace(validP, c.from, c.to, 1)
+		if raw == validP {
+			t.Fatalf("%s: fixture text not found", c.name)
+		}
+		if reason := parse(raw); !strings.Contains(reason, c.want) {
+			t.Errorf("%s: got %q", c.name, reason)
+		}
+	}
+	// A recipe id belongs to P alone.
+	if reason := parse(strings.Replace(validC, `"relation_id"`, `"recipe_id": 16, "relation_id"`, 1)); !strings.Contains(reason, "recipe_id") {
+		t.Errorf("recipe_id on C: %q", reason)
+	}
+}
