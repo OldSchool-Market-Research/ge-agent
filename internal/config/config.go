@@ -3,42 +3,24 @@
 package config
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 )
 
 type Config struct {
-	APIKey     string        // MINIMAX_API_KEY, or `minimax=` from ./.env
-	BaseURL    string        // GE_AGENT_BASE_URL
-	Model      string        // GE_AGENT_MODEL
 	GeMcpPath  string        // GE_MCP_PATH — the ge-mcp binary the agent spawns
 	GeMcpDSN   string        // GE_MCP_DSN — passed through to the child
 	ReportsDir string        // GE_AGENT_REPORTS_DIR
 	MaxTurns   int           // GE_AGENT_MAX_TURNS
-	MaxTokens  int           // GE_AGENT_MAX_TOKENS per response
 	Directive  string        // GE_AGENT_DIRECTIVE — path to DIRECTIVE.md
 	BriefFile  string        // GE_AGENT_BRIEF_FILE — optional per-run brief appended to the system prompt
 	Timeout    time.Duration // GE_AGENT_RUN_TIMEOUT — whole-run ceiling
 
-	// PruneKeepTurns: how many of the newest tool-result messages keep their
-	// full contents when the transcript is resent (older ones are stubbed —
-	// the audit log and report appendix always keep everything). <= 0
-	// disables tool-result pruning.
-	PruneKeepTurns int // GE_AGENT_PRUNE_KEEP_TURNS
-	// CacheControl marks system+tools with prompt-cache breakpoints. Off
-	// until MiniMax's Anthropic-compatible endpoint is verified to accept it.
-	CacheControl bool // GE_AGENT_CACHE_CONTROL
-
-	// Driver picks what runs the model loop. "api" (default) is the
-	// hand-rolled Anthropic-messages loop against BaseURL/Model. "kimi" hands
-	// the loop to the Kimi Code CLI, which authenticates with a coding-plan
-	// login rather than an API key (the plan has no API access), while
-	// ge-agent serves the tools to it as an MCP proxy (loop/kimi.go).
-	Driver    string // GE_AGENT_DRIVER: api | kimi
+	// The model loop is the Kimi Code CLI, which authenticates with a
+	// coding-plan login rather than an API key (the plan has no API access),
+	// while ge-agent serves the tools to it as an MCP proxy (loop/kimi.go).
 	KimiCmd   string // GE_AGENT_KIMI_CMD — the kimi CLI
 	KimiHome  string // GE_AGENT_KIMI_HOME — KIMI_CODE_HOME (login, config, sessions); "" = the CLI's default
 	KimiModel string // GE_AGENT_KIMI_MODEL — model alias, e.g. kimi-code/k3.1-pro; "" = the CLI's default_model
@@ -46,57 +28,25 @@ type Config struct {
 
 func Load() (*Config, error) {
 	c := &Config{
-		APIKey:     os.Getenv("MINIMAX_API_KEY"),
-		BaseURL:    getenv("GE_AGENT_BASE_URL", "https://api.minimax.io/anthropic"),
-		Model:      getenv("GE_AGENT_MODEL", "MiniMax-M3"),
 		GeMcpPath:  os.Getenv("GE_MCP_PATH"),
 		GeMcpDSN:   os.Getenv("GE_MCP_DSN"),
 		ReportsDir: getenv("GE_AGENT_REPORTS_DIR", "reports"),
 		MaxTurns:   getenvInt("GE_AGENT_MAX_TURNS", 50),
-		MaxTokens:  getenvInt("GE_AGENT_MAX_TOKENS", 16384),
 		Directive:  getenv("GE_AGENT_DIRECTIVE", "DIRECTIVE.md"),
 		BriefFile:  os.Getenv("GE_AGENT_BRIEF_FILE"),
 		Timeout:    time.Duration(getenvInt("GE_AGENT_RUN_TIMEOUT_S", 3600)) * time.Second,
 
-		PruneKeepTurns: getenvInt("GE_AGENT_PRUNE_KEEP_TURNS", 2),
-		CacheControl:   os.Getenv("GE_AGENT_CACHE_CONTROL") == "1",
-
-		Driver:    getenv("GE_AGENT_DRIVER", "api"),
 		KimiCmd:   getenv("GE_AGENT_KIMI_CMD", "kimi"),
 		KimiHome:  os.Getenv("GE_AGENT_KIMI_HOME"),
 		KimiModel: os.Getenv("GE_AGENT_KIMI_MODEL"),
 	}
-	if c.APIKey == "" {
-		c.APIKey = keyFromDotEnv(".env", "minimax")
-	}
 	switch {
-	case c.Driver != "api" && c.Driver != "kimi":
-		return nil, fmt.Errorf("GE_AGENT_DRIVER %q: want api or kimi", c.Driver)
-	case c.Driver == "api" && c.APIKey == "":
-		return nil, fmt.Errorf("no API key: set MINIMAX_API_KEY or `minimax=` in ./.env")
 	case c.GeMcpPath == "":
 		return nil, fmt.Errorf("GE_MCP_PATH not set (path to the ge-mcp binary)")
 	case c.GeMcpDSN == "":
 		return nil, fmt.Errorf("GE_MCP_DSN not set (passed through to ge-mcp)")
 	}
 	return c, nil
-}
-
-// keyFromDotEnv reads KEY=VALUE lines; returns "" when absent.
-func keyFromDotEnv(path, key string) string {
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if v, ok := strings.CutPrefix(line, key+"="); ok {
-			return strings.Trim(strings.TrimSpace(v), `"'`)
-		}
-	}
-	return ""
 }
 
 func getenv(key, def string) string {

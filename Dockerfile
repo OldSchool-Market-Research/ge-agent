@@ -12,7 +12,8 @@ RUN CGO_ENABLED=0 GOOS=linux \
     go build -trimpath -ldflags="-s -w" -o /out/ge-agent .
 
 # ---- runtime ----
-# distroless/static ships ca-certificates — needed for the MiniMax HTTPS calls.
+# distroless/static: the agent makes no network calls itself (in the
+# orchestrator image, the kimi CLI it spawns does).
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/ge-agent /ge-agent
 COPY DIRECTIVE.md /etc/ge-agent/DIRECTIVE.md

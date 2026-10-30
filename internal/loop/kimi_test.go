@@ -213,17 +213,13 @@ func TestKimiWorkspaceHasNoSecretsAndOnlyGeTools(t *testing.T) {
 }
 
 func TestKimiEnv(t *testing.T) {
-	t.Setenv("MINIMAX_API_KEY", "secret")
 	t.Setenv("GE_MCP_DSN", "postgresql://x")
 	h := proxyHandoff{Dir: "/ws", ReportPath: "/ws/r.md"}
 	env := strings.Join(kimiEnv(&config.Config{KimiHome: "/kimi"}, "/ws", h), "\n")
-	for _, want := range []string{"GE_MCP_DSN=postgresql://x", "KIMI_CODE_HOME=/kimi", "KIMI_CODE_TRUST_WORKSPACE=1", "KIMI_CODE_NO_AUTO_UPDATE=1", "GE_AGENT_DRIVER=kimi", envProxyDir + "=/ws"} {
+	for _, want := range []string{"GE_MCP_DSN=postgresql://x", "KIMI_CODE_HOME=/kimi", "KIMI_CODE_TRUST_WORKSPACE=1", "KIMI_CODE_NO_AUTO_UPDATE=1", envProxyDir + "=/ws"} {
 		if !strings.Contains(env, want) {
 			t.Errorf("env lacks %s", want)
 		}
-	}
-	if strings.Contains(env, "secret") {
-		t.Error("the MiniMax key leaked into kimi's environment")
 	}
 }
 
