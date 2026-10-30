@@ -268,7 +268,11 @@ For each candidate, do not stop at "it looks promising." Walk the chain:
    If the disconfirming check fails, **discard the hypothesis** — don't soften it.
 5. **Size.** Bound by `buy_limit` AND a ~15% share of the volume that will actually be
    there when you trade (24h volume for F; the budget's affordable units for B;
-   post-shock volume for V — haircut it; for C, each leg's volume ÷ its qty, the min over legs). State capital required
+   post-shock volume for V — haircut it; for C, each leg's volume ÷ its qty, the min over legs)
+   AND, for every lane, what the budget buys: `floor(research budget ÷ entry_price)` units
+   (C: conversions, entry_price per conversion). A 29M-per-conversion set with a buy
+   bound of 8 is sized at 1, not 8 — that is sizing to the binding constraint, not
+   resizing a dead idea. `units_used` is the min of all three. State capital required
    (≤ the research budget, per-opportunity) and the absolute gp per cycle. Post-tax,
    always. **Use the scale**: if `capital_required` is under half the budget, name
    what binds (buy limit or volume share). A 1–2% ROI on 20–30M is the *intended
@@ -491,11 +495,11 @@ harness could paper-trade it mechanically.
   horizon:          <expected hold / cycle time in words (B: the turnaround estimate)>
   attention:        <REQUIRED for F, B, C: offer cadence, longest safe unattended window, reaction risk>
   attention_spec:   {checks_per_hour: <number>, max_unattended_hours: <number>}  # REQUIRED for F, B, C — the attention contract as numbers, agreeing with the prose; fractional checks_per_hour = less than hourly (0.25 = every 4h)
-  capital_required: <gp to run one full cycle at target size; ≤ the research budget on its own>
+  capital_required: <gp to run one full cycle at target size; ≤ the research budget on its own; MUST equal size.units_used × entry_price (within 10%) — the harness vetoes a strategy whose size fields describe different batches>
   size:             # C: all three count CONVERSIONS, not items
     buy_limit:      <units / 4h; C: combo_quote's units_bound_per_4h = the tightest buy leg's limit / its qty (3-dose limit 2000, 4 per conversion = 500)>
     vol_constrained:<units fillable at ~15% share of the RELEVANT volume; C: in conversions>
-    units_used:     <min of the two>
+    units_used:     <min of buy_limit, vol_constrained and floor(research budget ÷ entry_price) — the SAME batch capital_required and per_cycle_gp are priced on; never the raw buy limit>
   expected_value:
     per_cycle_gp:   <post-tax; F: one 4h buy-limit cycle, MUST be ≥ 400,000; C: one 4h batch at budget size, MUST be ≥ 200,000>
     per_1h_gp:      <post-tax; F: per_cycle/4, B: per_cycle/turnaround hours>

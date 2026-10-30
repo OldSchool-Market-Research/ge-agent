@@ -696,3 +696,57 @@ func TestQuotedNumbersCoerced(t *testing.T) {
 		}
 	})
 }
+
+// An untitled strategy gets a title derived from its own legs or items
+// instead of a rejection (6 of 10 rejected runs, Oct 25-29 2026).
+func TestParseDerivesMissingTitle(t *testing.T) {
+	cases := []struct {
+		name, fixture, want string
+	}{
+		{"conversion from legs", validC, "4 × Prayer potion(3) → 3 × Prayer potion(4)"},
+		{"single item", validF, "F Adamantite bar"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			for _, blank := range []any{nil, "", "   "} {
+				var m map[string]any
+				if err := json.Unmarshal([]byte(c.fixture), &m); err != nil {
+					t.Fatal(err)
+				}
+				if blank == nil {
+					delete(m, "title")
+				} else {
+					m["title"] = blank
+				}
+				raw, _ := json.Marshal([]any{m})
+				list, reason := Parse(raw)
+				if reason != "" {
+					t.Fatalf("title %v: rejected: %s", blank, reason)
+				}
+				if got := list[0].Title; got != c.want {
+					t.Errorf("title %v: derived %q, want %q", blank, got, c.want)
+				}
+			}
+		})
+	}
+}
+
+// A model-written title is never replaced, and a strategy with nothing to
+// name it after is still rejected.
+func TestParseKeepsTitleAndStillRejectsUnnameable(t *testing.T) {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(validC), &m); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal([]any{m})
+	if list, reason := Parse(raw); reason != "" || list[0].Title != "Prayer potion 3->4 decant" {
+		t.Fatalf("kept title: got %q / %q", list[0].Title, reason)
+	}
+	delete(m, "title")
+	delete(m, "legs")
+	m["items"] = []any{}
+	raw, _ = json.Marshal([]any{m})
+	if _, reason := Parse(raw); !strings.Contains(reason, "title: required") {
+		t.Fatalf("unnameable strategy: got %q, want a title rejection", reason)
+	}
+}
