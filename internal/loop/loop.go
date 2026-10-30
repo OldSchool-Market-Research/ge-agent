@@ -54,7 +54,7 @@ var submitReportDef = json.RawMessage(`{
             }, "required": ["checks_per_hour","max_unattended_hours"]},
             "capital_required": {"type": "integer", "description": "gp, plain integer; must fit the 50M research budget on its own (per-opportunity, not a shared pool)"},
             "size": {"type": "object", "properties": {
-              "buy_limit": {"type": "integer"}, "vol_constrained": {"type": "integer"}, "units_used": {"type": "integer"}
+              "buy_limit": {"type": ["integer","null"], "description": "null when the item's limit is unknown"}, "vol_constrained": {"type": "integer"}, "units_used": {"type": "integer"}
             }, "required": ["buy_limit","vol_constrained","units_used"]},
             "expected_value": {"type": "object", "properties": {
               "per_cycle_gp": {"type": "integer", "description": "post-tax; F: one 4h buy-limit cycle, MUST be >= 400000; B: MUST be >= 100000"}, "per_1h_gp": {"type": "integer", "description": "post-tax gp per hour on the archetype's own cycle (F: per_cycle/4; B: per_cycle/turnaround hours; C: one 4h buy-limit cycle / 4)"},
