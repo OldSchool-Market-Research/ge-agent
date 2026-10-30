@@ -627,10 +627,10 @@ harness could paper-trade it mechanically.
 > patient buyer of the pieces collects the gap.*
 > **Quantify:** `combo_screen(kind=set)` ranked it #2; `combo_quote` forward: input
 > cost 1,850,000, post-tax output 1,898,000, `combo_margin` 48,000,
-> `units_bound_per_4h` 15, `worst_leg_age_ratio` 1.4, thinnest piece 640 units/4h.
+> `units_bound_per_4h` 15, `worst_leg_age_ratio` 1.4, thinnest leg 640 units/4h.
 > **Falsify:** freshness: `worst_leg_age_ratio` 1.4 ≤ 3 ✓. Persistence:
-> `item_history` on the set and its thinnest piece shows the gap positive on most of
-> the last 14 days, so it is a standing premium and not one print ✓. Throughput: 15%
+> `item_history` on the set and each piece shows the gap positive on most of the
+> last 14 days, so it is a standing premium and not one print ✓. Throughput: 15%
 > of 640 = 96 conversions/4h, above the buy bound of 15 ✓. No skill or quest gate in
 > `notes` ✓. No-arb: 48k is 2.5% of the sell side, inside the normal set premium ✓.
 > **Size:** min(buy bound 15, volume 96, budget 27) = 15 conversions; 15 × 48,000 =

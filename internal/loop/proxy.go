@@ -210,9 +210,8 @@ func (p *proxy) callTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 
 // callCacheTTL bounds how long an identical call is answered from memory.
 // prices_1m moves once a minute (the wiki's /latest is cached 60s), so a
-// cached answer is at most one tick behind, and the vetter re-prices every
-// ship at ingest anyway. Over Oct 16-30, 28% of combo_quote calls repeated one
-// made earlier in the same run, 58% of those within 60s.
+// cached answer is at most one tick behind. Over Oct 16-30, 28% of combo_quote
+// calls repeated one made earlier in the same run, 58% of those within 60s.
 const callCacheTTL = 60 * time.Second
 
 type cachedCall struct {
