@@ -200,6 +200,9 @@ func runKimiOnce(ctx context.Context, cfg *config.Config, ws string, h proxyHand
 		// stop kimi, and drain so it isn't left blocked on a full pipe.
 		log.Printf("kimi stream unreadable, stopping kimi: %v", err)
 		cancel()
+		// SIGKILL, not just the SIGTERM above: a child that ignored it would
+		// hold stdout open and the drain would never see EOF.
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		_, _ = io.Copy(io.Discard, stdout)
 	}
 	wg.Wait()
