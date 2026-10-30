@@ -223,3 +223,96 @@ func TestProxyCancelledCallKeepsRunAlive(t *testing.T) {
 		t.Errorf("the run is over after a cancelled call: %q", resultText(t, res))
 	}
 }
+
+// countingBackend counts ge-mcp calls per tool; "bad" answers with a tool error.
+type countingBackend struct {
+	fakeBackend
+	calls map[string]int
+}
+
+func (c *countingBackend) Call(ctx context.Context, name string, args json.RawMessage) (string, bool, error) {
+	c.mu.Lock()
+	c.calls[name]++
+	c.mu.Unlock()
+	if name == "bad" {
+		return `{"error":"item_not_found"}`, true, nil
+	}
+	return c.fakeBackend.Call(ctx, name, args)
+}
+
+func TestProxyCachesIdenticalCallsForAMinute(t *testing.T) {
+	b := &countingBackend{calls: map[string]int{}}
+	p, err := newProxy(b, testHandoff(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	p.now = func() time.Time { return now }
+	ctx := context.Background()
+
+	p.callTool(ctx, callReq("combo_quote", `{"relation_id":7,"direction":"forward"}`))
+	now = now.Add(59 * time.Second)
+	// Same arguments in another key order: answered from the cache.
+	res, _ := p.callTool(ctx, callReq("combo_quote", `{"direction":"forward","relation_id":7}`))
+	if res.IsError || resultText(t, res) != `{"rows":[]}` {
+		t.Fatalf("cached result %q", resultText(t, res))
+	}
+	if b.calls["combo_quote"] != 1 {
+		t.Fatalf("a repeat inside the TTL reached ge-mcp: %d calls", b.calls["combo_quote"])
+	}
+	p.callTool(ctx, callReq("combo_quote", `{"relation_id":7,"direction":"reverse"}`))
+	if b.calls["combo_quote"] != 2 {
+		t.Fatalf("different arguments must miss: %d calls", b.calls["combo_quote"])
+	}
+	now = now.Add(2 * time.Second) // 61s after the first call
+	p.callTool(ctx, callReq("combo_quote", `{"relation_id":7,"direction":"forward"}`))
+	if b.calls["combo_quote"] != 3 {
+		t.Fatalf("an expired entry must refetch: %d calls", b.calls["combo_quote"])
+	}
+
+	p.callTool(ctx, callReq("bad", `{}`))
+	p.callTool(ctx, callReq("bad", `{}`))
+	if b.calls["bad"] != 2 {
+		t.Fatalf("tool errors must not be cached: %d calls", b.calls["bad"])
+	}
+}
+
+func TestPrecomputedScan(t *testing.T) {
+	cases := []struct {
+		tool, args string
+		refused    bool
+	}{
+		{"volume_zscore", `{"window":"1h","limit":25}`, true}, // default baseline is same_how
+		{"volume_zscore", `{"baseline":"same_how"}`, true},
+		{"volume_zscore", `{"baseline":"trailing","limit":25}`, false},
+		{"volume_zscore", `{"name_or_id":"Fish pie","baseline":"same_how"}`, false},
+		{"seasonal_scan", `{"limit":15}`, true},
+		{"seasonality", `{"name_or_id":"Fish pie"}`, false},
+		{"top_flips", `{"min_vol24h":100000}`, false},
+	}
+	for _, c := range cases {
+		if got := precomputedScan(c.tool, json.RawMessage(c.args)) != ""; got != c.refused {
+			t.Errorf("%s %s: refused=%v, want %v", c.tool, c.args, got, c.refused)
+		}
+	}
+}
+
+func TestProxyRefusesPrecomputedScansOnlyWhenTold(t *testing.T) {
+	ctx := context.Background()
+	b := &countingBackend{calls: map[string]int{}}
+	p, err := newProxy(b, testHandoff(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := p.callTool(ctx, callReq("seasonal_scan", `{}`)); res.IsError {
+		t.Fatalf("without the flag the scan runs: %q", resultText(t, res))
+	}
+	p.precomputed = true
+	res, _ := p.callTool(ctx, callReq("volume_zscore", `{"limit":25}`))
+	if !res.IsError || !strings.Contains(resultText(t, res), "Latest market sweep") {
+		t.Fatalf("result %q", resultText(t, res))
+	}
+	if b.calls["volume_zscore"] != 0 {
+		t.Fatal("a refused scan reached ge-mcp")
+	}
+}

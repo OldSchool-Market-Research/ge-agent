@@ -96,10 +96,16 @@ type proxy struct {
 	h       proxyHandoff
 	prior   []mcpbridge.CallRecord // calls made by earlier proxies this run
 
+	// precomputed refuses the whole-market scans the brief already carries
+	// (config.PrecomputedScans).
+	precomputed bool
+	now         func() time.Time // nil = time.Now; tests pin the cache clock
+
 	mu      sync.Mutex
 	written int // backend records already appended to the audit file
 	streak  rejectStreak
 	over    bool
+	cache   map[string]cachedCall // identical successful calls, see callCacheTTL
 }
 
 // ServeProxy runs the MCP proxy until kimi closes its stdin.
@@ -121,6 +127,7 @@ func ServeProxy(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	p.precomputed = cfg.PrecomputedScans
 	return server.NewStdioServer(p.server(tools)).Listen(ctx, os.Stdin, os.Stdout)
 }
 
@@ -129,7 +136,7 @@ func newProxy(backend toolBackend, h proxyHandoff) (*proxy, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &proxy{backend: backend, h: h, prior: prior}
+	p := &proxy{backend: backend, h: h, prior: prior, cache: map[string]cachedCall{}}
 	if err := readJSON(h.streakPath(), &p.streak); err != nil {
 		return nil, err
 	}
@@ -162,6 +169,17 @@ func (p *proxy) callTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 	if err != nil {
 		return mcp.NewToolResultError("arguments are not JSON: " + err.Error()), nil
 	}
+	if p.precomputed {
+		if msg := precomputedScan(req.Params.Name, args); msg != "" {
+			log.Printf("  tool %s refused: precomputed in the brief", req.Params.Name)
+			return mcp.NewToolResultError(msg), nil
+		}
+	}
+	key := cacheKey(req.Params.Name, args)
+	if text, ok := p.cached(key); ok {
+		log.Printf("  tool %s (err=false, %d bytes) cached", req.Params.Name, len(text))
+		return mcp.NewToolResultText(text), nil
+	}
 	text, isErr, err := p.backend.Call(ctx, req.Params.Name, args)
 	if err != nil && ctx.Err() != nil {
 		// kimi cancelled the call (its per-call tool timeout) and has already
@@ -179,11 +197,83 @@ func (p *proxy) callTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 	}
 	p.mu.Lock()
 	p.flushAuditLocked()
+	if !isErr && key != "" {
+		p.cache[key] = cachedCall{text: text, at: p.clock()}
+	}
 	p.mu.Unlock()
 	log.Printf("  tool %s (err=%v, %d bytes)", req.Params.Name, isErr, len(text))
 	res := mcp.NewToolResultText(text)
 	res.IsError = isErr
 	return res, nil
+}
+
+// callCacheTTL bounds how long an identical call is answered from memory.
+// prices_1m moves once a minute (the wiki's /latest is cached 60s), so a
+// repeat inside it would read the same rows. Over Oct 16-30, 28% of
+// combo_quote calls repeated one made earlier in the same run, 58% of those
+// within 60s.
+const callCacheTTL = 60 * time.Second
+
+type cachedCall struct {
+	text string
+	at   time.Time
+}
+
+// cacheKey is the tool name plus its arguments re-marshalled, which sorts
+// object keys, so {"a":1,"b":2} and {"b":2,"a":1} hit the same entry. ""
+// (uncacheable) when the arguments don't parse.
+func cacheKey(name string, args json.RawMessage) string {
+	var v any
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &v); err != nil {
+			return ""
+		}
+	}
+	canon, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return name + " " + string(canon)
+}
+
+func (p *proxy) cached(key string) (string, bool) {
+	if key == "" {
+		return "", false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	c, ok := p.cache[key]
+	if !ok || p.clock().Sub(c.at) >= callCacheTTL {
+		return "", false
+	}
+	return c.text, true
+}
+
+func (p *proxy) clock() time.Time {
+	if p.now != nil {
+		return p.now()
+	}
+	return time.Now()
+}
+
+// precomputedScan returns a refusal for the whole-market scans the
+// orchestrator's collector already ran this hour (the brief's "Latest market
+// sweep"), or "" to let the call through. Between them they took 56% of tool
+// wall time over Oct 16-30 and fed no shipped strategy; under the CLI's old
+// 60s per-call limit the volume scan failed runs 8673-8681.
+func precomputedScan(name string, args json.RawMessage) string {
+	var a struct {
+		NameOrID string `json:"name_or_id"`
+		Baseline string `json:"baseline"`
+	}
+	_ = json.Unmarshal(args, &a) // bad arguments are ge-mcp's to reject
+	switch {
+	case name == "volume_zscore" && a.NameOrID == "" && a.Baseline != "trailing":
+		return "Not run: the whole-market same-hour-of-week volume scan (~65s) is precomputed every hour — read \"volume anomalies vs the same hour of the week\" in the brief's Latest market sweep. For one item call volume_zscore with name_or_id; for a fresh whole-market scan use baseline=trailing (~3s)."
+	case name == "seasonal_scan":
+		return "Not run: the whole-market seasonal scan (~110s) is precomputed every hour — read \"hour-of-week amplitude\" in the brief's Latest market sweep. For one item call seasonality with name_or_id."
+	}
+	return ""
 }
 
 func (p *proxy) submit(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
