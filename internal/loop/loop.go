@@ -100,6 +100,21 @@ var submitReportDef = json.RawMessage(`{
           "verdict": {"type": "string", "enum": ["shipped","dismissed"]},
           "reason": {"type": "string", "description": "for shipped: which strategy id; for dismissed: what killed it"}
         }, "required": ["signal_id","verdict","reason"]}
+      },
+      "proposals": {
+        "type": "array",
+        "description": "Optional, at most 3. Something worth the operator's attention that you can't ship: a recipe missing from item_relations, a new lane, a method change, a tool you lack. Only for something new: the brief lists what's already on file. An operator decides; nothing here trades.",
+        "items": {"type": "object", "properties": {
+          "kind": {"type": "string", "enum": ["recipe","lane","method","tool"]},
+          "title": {"type": "string", "description": "One line, under 120 characters"},
+          "detail": {"type": "string", "description": "What it is and why it would pay. Under 1000 characters"},
+          "evidence": {"type": "string", "description": "The tool calls and numbers from this run behind it. Under 1000 characters"},
+          "recipe": {"type": "object", "description": "kind recipe only: the conversion, per one conversion, as item_relations would hold it", "properties": {
+            "inputs": {"type": "array", "items": {"type": "object", "properties": {"item_id": {"type": "integer"}, "qty": {"type": "integer"}}, "required": ["item_id","qty"]}},
+            "outputs": {"type": "array", "items": {"type": "object", "properties": {"item_id": {"type": "integer"}, "qty": {"type": "integer"}}, "required": ["item_id","qty"]}},
+            "reversible": {"type": "boolean"}
+          }, "required": ["inputs","outputs"]}
+        }, "required": ["kind","title","detail","evidence"]}
       }
     },
     "required": ["markdown", "strategies"]
@@ -165,6 +180,7 @@ func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, 
 		Markdown       string          `json:"markdown"`
 		Strategies     json.RawMessage `json:"strategies"`
 		SignalVerdicts json.RawMessage `json:"signal_verdicts"`
+		Proposals      json.RawMessage `json:"proposals"`
 	}
 	if err := json.Unmarshal(input, &args); err != nil || strings.TrimSpace(args.Markdown) == "" {
 		return "", "markdown must be a non-empty string"
@@ -180,12 +196,16 @@ func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, 
 	if reason != "" {
 		return "", reason
 	}
+	proposals, dropped := strategy.ParseProposals(args.Proposals)
+	if dropped > 0 {
+		log.Printf("dropped %d malformed or excess proposal(s)", dropped)
+	}
 	if err := report.Write(reportPath, args.Markdown, audit.AuditLog()); err != nil {
 		return "", "write failed: " + err.Error()
 	}
 	if err := report.WriteSidecar(reportPath, strategy.Sidecar{
 		RunStartedAt: runStart, ReportPath: reportPath, Strategies: strategies,
-		SignalVerdicts: verdicts,
+		SignalVerdicts: verdicts, Proposals: proposals,
 	}); err != nil {
 		return "", "sidecar write failed: " + err.Error()
 	}

@@ -158,7 +158,40 @@ type Sidecar struct {
 	ReportPath     string          `json:"report_path"`
 	Strategies     []Strategy      `json:"strategies"`
 	SignalVerdicts []SignalVerdict `json:"signal_verdicts,omitempty"`
+	Proposals      []Proposal      `json:"proposals,omitempty"`
 }
+
+// Proposal is something the agent found but can't ship: a recipe missing from
+// item_relations, a lane the validator doesn't know, a method change, a tool it
+// lacks. It reaches the operator, who decides; it never reaches the book.
+type Proposal struct {
+	Kind     string          `json:"kind"` // recipe | lane | method | tool
+	Title    string          `json:"title"`
+	Detail   string          `json:"detail"`
+	Evidence string          `json:"evidence"`
+	Recipe   *ProposedRecipe `json:"recipe,omitempty"` // kind recipe only
+}
+
+// ProposedRecipe is a conversion the agent believes exists, in item_relations'
+// shape. The item_relations table is hand-curated because a wrong recipe books
+// phantom gp (the moon-set bug), so this is a claim for a person to check.
+type ProposedRecipe struct {
+	Inputs     []ProposedLeg `json:"inputs"`
+	Outputs    []ProposedLeg `json:"outputs"`
+	Reversible bool          `json:"reversible,omitempty"`
+}
+
+// ProposedLeg is one component of a ProposedRecipe, per conversion.
+type ProposedLeg struct {
+	ItemID int   `json:"item_id"`
+	Qty    int64 `json:"qty"`
+}
+
+const (
+	maxProposals      = 3
+	maxProposalTitle  = 120
+	maxProposalDetail = 1000
+)
 
 var (
 	idRe        = regexp.MustCompile(`^[FBSVCUH]-[a-z0-9-]+-\d{8}$`)
@@ -334,6 +367,69 @@ func parseQuotedNumber(s string) (json.Number, bool) {
 }
 
 var quotedNumberRe = regexp.MustCompile(`^[+-]?\d[\d,_]*(\.\d+)?([eE][+-]?\d+)?$`)
+
+// ParseProposals keeps the well-formed entries of the optional proposals array,
+// up to maxProposals, and reports how many it dropped. It never rejects the report:
+// a proposal is optional, so a bad one must not cost a turn, let alone a run.
+func ParseProposals(raw json.RawMessage) ([]Proposal, int) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, 0
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, 1
+	}
+	var list []Proposal
+	dropped := 0
+	for _, item := range items {
+		var p Proposal
+		if err := json.Unmarshal(item, &p); err != nil || len(list) == maxProposals || !p.normalize() {
+			dropped++
+			continue
+		}
+		list = append(list, p)
+	}
+	return list, dropped
+}
+
+// normalize trims and bounds a proposal's text and reports whether it is usable.
+func (p *Proposal) normalize() bool {
+	p.Title = clip(p.Title, maxProposalTitle)
+	p.Detail = clip(p.Detail, maxProposalDetail)
+	p.Evidence = clip(p.Evidence, maxProposalDetail)
+	if p.Title == "" || p.Detail == "" {
+		return false
+	}
+	switch p.Kind {
+	case "recipe":
+		return p.Recipe.wellFormed()
+	case "lane", "method", "tool":
+		p.Recipe = nil
+		return true
+	}
+	return false
+}
+
+func (r *ProposedRecipe) wellFormed() bool {
+	if r == nil || len(r.Inputs) == 0 || len(r.Outputs) == 0 {
+		return false
+	}
+	for _, l := range append(append([]ProposedLeg{}, r.Inputs...), r.Outputs...) {
+		if l.ItemID <= 0 || l.Qty <= 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// clip trims s and cuts it to n runes (a byte cut could split a character).
+func clip(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
 
 // ParseSignalVerdicts decodes and validates the optional signal_verdicts
 // array. Returns nil for absent/empty input.

@@ -208,6 +208,13 @@ The brief carries the harness's own paper record, compiled with zero LLM
 involvement. It is not advice — it is the arithmetic your claims will be judged
 by. Read these sections before you pitch anything:
 
+- **Recipe families.** Each recipe has a `family`, finer than its kind: `barrows`,
+  `moon`, `endgame`, `dragonhide`, `robes`, `metal` (sets); `dismantle`, `godsword`,
+  `shield`, `boots`, `jewellery`, `repair`, `weapon`, `armour`, `misc` (combines);
+  `restore`, `combat`, `utility` (decants). `combo_screen` and `list_relations` return
+  it and filter by it, and the brief's rows carry it. Yields differ a lot between
+  families in the same kind, so a family with a measured row tells you more than its
+  kind.
 - **Calibration.** Per archetype: `factor = p_survive × pace_ratio`, measured
   from every recent close. `EV_calibrated = factor × your claimed EV`. The same
   factor scales the confirm bar, so an honest claim is also how a strategy of yours
@@ -234,6 +241,23 @@ by. Read these sections before you pitch anything:
   should test whether the falsification still holds. If it does, dismiss with
   a one-line confirmation; re-deriving a known death from scratch is the
   single largest waste of run budget the record has measured.
+
+---
+
+## Proposals: what you can't ship, you can suggest
+
+You can only ship the lanes below, and a conversion only on a recipe in
+`item_relations`. When you find something real outside that, file it in
+`submit_report`'s optional `proposals` (at most 3, usually none): a `recipe` the
+table is missing, a `lane` nothing here covers, a `method` change the record argues
+for, or a `tool` you needed and didn't have. Give the numbers from this run. A person
+reads these and decides; nothing in them trades, and a bad one is dropped without
+touching your report.
+
+File only what's new: the brief lists what's on file and how it was decided, so
+don't re-file an open idea, and don't re-file a rejected one without new evidence. A
+recipe must be one you're sure of, every leg and quantity: a recipe missing a
+component books phantom gp, which is why the table is hand-curated.
 
 ---
 
