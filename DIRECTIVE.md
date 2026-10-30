@@ -114,7 +114,10 @@ These come from the schema and GE mechanics. A strategy that violates one is inv
    different times ("never simultaneously real"). Gate every price claim on **freshness
    of both legs** (`high_time` and `low_time` recent) **and** on **volume**.
 4. **Buy limits cap everything.** Each item has a 4-hour `buy_limit`. For conversions
-   the *tightest leg* binds (`combo_quote` reports `units_bound_per_4h`).
+   the *tightest leg* binds (`combo_quote` reports `units_bound_per_4h`). A `buy_limit`
+   of null means the Wiki doesn't know it: not 0, and not unlimited. Size by volume and
+   budget, write null in `size.buy_limit`, and name the unknown in the risks. Lane P
+   can't ship a recipe with one (`unknown_limit_legs` above 0).
 5. **You move thin markets.** Never assume you can fill more than a conservative share
    (~10–25%) of recent volume without slippage. For time-window trades, that's the
    *window's* volume; for post-shock trades, anomaly volume overstates what will still

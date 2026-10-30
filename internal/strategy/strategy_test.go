@@ -854,3 +854,16 @@ func TestValidateP(t *testing.T) {
 		t.Errorf("recipe_id on C: %q", reason)
 	}
 }
+
+// An unknown limit reaches a strategy as null. The Kimi CLI rejects the whole report on
+// a schema miss, so the schema allows it, and validation must read it as no cap.
+func TestParseSizeBuyLimitNull(t *testing.T) {
+	raw := strings.Replace(validV, `"size": {"buy_limit": 30000,`, `"size": {"buy_limit": null,`, 1)
+	if raw == validV {
+		t.Fatal("fixture no longer has that size block")
+	}
+	list, reason := Parse(json.RawMessage("[" + raw + "]"))
+	if reason != "" || len(list) != 1 || list[0].Size.BuyLimit != 0 {
+		t.Errorf("reason %q list %+v", reason, list)
+	}
+}
