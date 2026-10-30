@@ -224,10 +224,9 @@ by. Read these sections before you pitch anything:
   worth 90k calibrated and is vetoed under the 400k floor, whatever its evidence.
   **Lane C: it is not enforced.** C carries one row per recipe kind (`C:set`,
   `C:combine`, `C:decant`). Use them to decide where to spend turns, and cite your
-  kind's factor in the thesis, but never dismiss a conversion on its factor alone:
-  a low one can be a measurement artifact (a thin leg's 30-minute volume can read as
-  zero pace on a positive margin). A candidate that clears the 200k floor at honest
-  size and survives your falsification ships.
+  kind's factor in the thesis, but never dismiss a conversion on its factor alone: C's
+  measurement restarted on Oct 30, so an early factor rests on few closes. A candidate
+  that clears the 200k floor at honest size and survives your falsification ships.
 - **Failure-mode digest.** How recent ships of each archetype actually died
   (`margin_collapse`, `leg_stale`, `volume_dried`, `entry_unreachable`,
   `exit_not_printing`, `stopped_out`, `expired_below_pace`). The dominant mode
