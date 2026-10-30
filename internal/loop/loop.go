@@ -114,9 +114,9 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 	runStart := time.Now().UTC()
 	reportPath := report.Filename(cfg.ReportsDir, runStart)
 
-	directive, err := os.ReadFile(cfg.Directive)
+	system, err := systemPrompt(cfg, harnessPreamble(runStart))
 	if err != nil {
-		return "", fmt.Errorf("read directive: %w", err)
+		return "", err
 	}
 
 	bridge, err := mcpbridge.New(ctx, cfg.GeMcpPath, cfg.GeMcpDSN)
@@ -144,26 +144,8 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 	client := &llm.Client{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Model: cfg.Model,
 		HTTP: newHTTPClient(), CacheControl: cfg.CacheControl}
 
-	system := string(directive) + "\n\n---\n\n" + harnessPreamble(runStart)
-	if cfg.BriefFile != "" {
-		brief, err := os.ReadFile(cfg.BriefFile)
-		if err != nil {
-			return "", fmt.Errorf("read brief: %w", err)
-		}
-		system += "\n\n---\n\n## Run brief (from the orchestrator — constraints for THIS run; the directive still governs method)\n\n" + string(brief)
-	}
-	history := []llm.Message{{Role: "user", Content: llm.TextContent(
-		"Run one full research cycle now, per the directive. Finish by calling submit_report with the complete report.")}}
+	history := []llm.Message{{Role: "user", Content: llm.TextContent(kickoffPrompt)}}
 
-	// A rejected submit_report means a complete, fixable report is in hand —
-	// the highest-value turns of the whole run. Grant a one-time grace
-	// extension the first time a submit is rejected, so a rejection landing
-	// near the turn budget doesn't throw away the entire cycle's research.
-	const graceTurns = 4
-	// The same rejection three times running means the model is not acting
-	// on the hint — run 1183 (2026-09-11) resubmitted one malformed field 40
-	// times and burned the grace plus half the budget on it. Stop paying.
-	const maxSameRejections = 3
 	nudges := 0
 	maxTurns := cfg.MaxTurns
 	graceGranted := false
@@ -190,11 +172,10 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 		if len(toolUses) == 0 {
 			stats.PerTurn = append(stats.PerTurn, turnStat)
 			// Model stopped talking instead of submitting. Nudge twice, then fail.
-			if nudges++; nudges > 2 {
+			if nudges++; nudges > maxNudges {
 				return failRun(reportPath, bridge, &stats, fmt.Errorf("model ended without submit_report after %d nudges", nudges-1))
 			}
-			history = append(history, llm.Message{Role: "user", Content: llm.TextContent(
-				"You have not submitted the report. Continue the cycle and finish by calling submit_report exactly once.")})
+			history = append(history, llm.Message{Role: "user", Content: llm.TextContent(nudgePrompt)})
 			continue
 		}
 
@@ -226,12 +207,7 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 					maxTurns += graceTurns
 					log.Printf("grace: +%d turns to fix the rejected report (budget now %d)", graceTurns, maxTurns)
 				}
-				hint := gateErr + " -- fix ONLY the named field and resubmit; do not re-run research"
-				if sameRejects > 1 {
-					hint = "SAME REJECTION AS YOUR PREVIOUS ATTEMPT -- your fix did not take. Change the named field's value in the JSON you send, then resubmit. " + hint
-				}
-				payload, _ := json.Marshal(map[string]any{"error": map[string]string{"code": "invalid_report", "reason": hint}})
-				results = append(results, llm.ToolResult(tu.ID, string(payload), true))
+				results = append(results, llm.ToolResult(tu.ID, rejectionPayload(gateErr, sameRejects), true))
 				continue
 			}
 			text, isErr, err := bridge.Call(ctx, tu.Name, tu.Input)
@@ -255,6 +231,41 @@ func newHTTPClient() *http.Client {
 	return &http.Client{Timeout: 10 * time.Minute}
 }
 
+const (
+	kickoffPrompt = "Run one full research cycle now, per the directive. Finish by calling submit_report with the complete report."
+	nudgePrompt   = "You have not submitted the report. Continue the cycle and finish by calling submit_report exactly once."
+	// A model that stops talking instead of submitting is nudged this many
+	// times before the run fails.
+	maxNudges = 2
+	// A rejected submit_report means a complete, fixable report is in hand —
+	// the highest-value turns of the whole run. Grant a one-time grace
+	// extension the first time a submit is rejected, so a rejection landing
+	// near the turn budget doesn't throw away the entire cycle's research.
+	graceTurns = 4
+	// The same rejection three times running means the model is not acting
+	// on the hint — run 1183 (2026-09-11) resubmitted one malformed field 40
+	// times and burned the grace plus half the budget on it. Stop paying.
+	maxSameRejections = 3
+)
+
+// systemPrompt is DIRECTIVE.md, the driver's harness notes, then the run
+// brief when the orchestrator wrote one.
+func systemPrompt(cfg *config.Config, preamble string) (string, error) {
+	directive, err := os.ReadFile(cfg.Directive)
+	if err != nil {
+		return "", fmt.Errorf("read directive: %w", err)
+	}
+	system := string(directive) + "\n\n---\n\n" + preamble
+	if cfg.BriefFile != "" {
+		brief, err := os.ReadFile(cfg.BriefFile)
+		if err != nil {
+			return "", fmt.Errorf("read brief: %w", err)
+		}
+		system += "\n\n---\n\n## Run brief (from the orchestrator — constraints for THIS run; the directive still governs method)\n\n" + string(brief)
+	}
+	return system, nil
+}
+
 func harnessPreamble(runStart time.Time) string {
 	return fmt.Sprintf(`## Harness notes (from the runtime, not the directive)
 - Current time: %s (UTC). Use this as the run timestamp in the report header.
@@ -269,6 +280,25 @@ func harnessPreamble(runStart time.Time) string {
 		runStart.Format("2006-01-02 15:04"))
 }
 
+// rejectionPayload is the tool_result body for a rejected submit_report:
+// the gate's reason plus a fix-only-the-field hint, escalated when the model
+// repeats the same mistake.
+func rejectionPayload(gateErr string, sameRejects int) string {
+	hint := gateErr + " -- fix ONLY the named field and resubmit; do not re-run research"
+	if sameRejects > 1 {
+		hint = "SAME REJECTION AS YOUR PREVIOUS ATTEMPT -- your fix did not take. Change the named field's value in the JSON you send, then resubmit. " + hint
+	}
+	payload, _ := json.Marshal(map[string]any{"error": map[string]string{"code": "invalid_report", "reason": hint}})
+	return string(payload)
+}
+
+// auditor is whatever witnessed the run's tool calls: the api driver's
+// bridge, or the kimi driver's proxy (which also replays the calls of an
+// earlier proxy in the same run).
+type auditor interface {
+	AuditLog() []mcpbridge.CallRecord
+}
+
 func collectToolUses(blocks []llm.Block) []llm.Block {
 	var out []llm.Block
 	for _, b := range blocks {
@@ -279,7 +309,7 @@ func collectToolUses(blocks []llm.Block) []llm.Block {
 	return out
 }
 
-func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, bridge *mcpbridge.Bridge) (string, string) {
+func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, audit auditor) (string, string) {
 	var args struct {
 		Markdown       string          `json:"markdown"`
 		Strategies     json.RawMessage `json:"strategies"`
@@ -299,7 +329,7 @@ func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, 
 	if reason != "" {
 		return "", reason
 	}
-	if err := report.Write(reportPath, args.Markdown, bridge.AuditLog()); err != nil {
+	if err := report.Write(reportPath, args.Markdown, audit.AuditLog()); err != nil {
 		return "", "write failed: " + err.Error()
 	}
 	if err := report.WriteSidecar(reportPath, strategy.Sidecar{
@@ -314,10 +344,10 @@ func handleSubmit(input json.RawMessage, reportPath string, runStart time.Time, 
 // failRun preserves the audit trail: writes <name>-FAILED.md with the reason
 // and every call made, plus the run's cost record — a failed run burned
 // tokens too, and that is exactly when the burn must stay visible.
-func failRun(reportPath string, bridge *mcpbridge.Bridge, stats *report.RunStats, cause error) (string, error) {
+func failRun(reportPath string, audit auditor, stats *report.RunStats, cause error) (string, error) {
 	failed := strings.TrimSuffix(reportPath, ".md") + "-FAILED.md"
 	md := fmt.Sprintf("# FAILED run\n\nReason: %s\n\nNo valid report was submitted. The tool-call log below records everything this run actually did.\n", cause)
-	if err := report.Write(failed, md, bridge.AuditLog()); err != nil {
+	if err := report.Write(failed, md, audit.AuditLog()); err != nil {
 		log.Printf("could not write failure report: %v", err)
 	}
 	stats.Outcome = "failed"

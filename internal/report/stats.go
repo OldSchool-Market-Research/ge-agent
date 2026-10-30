@@ -29,6 +29,9 @@ type RunStats struct {
 	PeakInput    int        `json:"peak_input_tokens"` // largest single turn: the live context size
 	PrunedBytes  int        `json:"pruned_bytes"`      // transcript bytes withheld by pruning, summed over sends
 	PerTurn      []TurnStat `json:"per_turn"`
+	// CachedInputTokens is the share of InputTokens served from the
+	// provider's prompt cache (kimi driver; the api driver runs uncached).
+	CachedInputTokens int `json:"cached_input_tokens,omitempty"`
 }
 
 // StatsPath derives the stats artifact path from a report path (works for
