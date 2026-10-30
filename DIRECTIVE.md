@@ -491,11 +491,11 @@ harness could paper-trade it mechanically.
   horizon:          <expected hold / cycle time in words (B: the turnaround estimate)>
   attention:        <REQUIRED for F, B, C: offer cadence, longest safe unattended window, reaction risk>
   attention_spec:   {checks_per_hour: <number>, max_unattended_hours: <number>}  # REQUIRED for F, B, C — the attention contract as numbers, agreeing with the prose; fractional checks_per_hour = less than hourly (0.25 = every 4h)
-  capital_required: <gp to run one full cycle at target size; ≤ the research budget on its own>
+  capital_required: <gp to run one full cycle at target size; ≤ the research budget on its own; MUST equal size.units_used × entry_price (within 10%) — the harness vetoes a strategy whose size fields describe different batches>
   size:             # C: all three count CONVERSIONS, not items
     buy_limit:      <units / 4h; C: combo_quote's units_bound_per_4h = the tightest buy leg's limit / its qty (3-dose limit 2000, 4 per conversion = 500)>
     vol_constrained:<units fillable at ~15% share of the RELEVANT volume; C: in conversions>
-    units_used:     <min of the two>
+    units_used:     <min of the two — the SAME batch capital_required and per_cycle_gp are priced on; never the raw buy limit>
   expected_value:
     per_cycle_gp:   <post-tax; F: one 4h buy-limit cycle, MUST be ≥ 400,000; C: one 4h batch at budget size, MUST be ≥ 200,000>
     per_1h_gp:      <post-tax; F: per_cycle/4, B: per_cycle/turnaround hours>

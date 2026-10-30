@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -206,6 +207,7 @@ func Parse(raw json.RawMessage) ([]Strategy, string) {
 		var list []Strategy
 		err := dec.Decode(&list)
 		if err == nil {
+			fillMissingTitles(list)
 			if reason := Validate(list, time.Now().UTC()); reason != "" {
 				return nil, reason
 			}
@@ -768,4 +770,50 @@ func max64(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+// fillMissingTitles derives a title for a strategy the model left untitled.
+// The title is a display label only: nothing downstream computes with it,
+// yet a missing one used to fail the gate, and the model (MiniMax-M3)
+// repeatedly resubmitted the same untitled strategy until the 3-strike
+// fail-fast threw the whole run away — 6 of the 10 rejected runs in the last
+// 100 (Oct 25-29 2026), research and all. Deriving it from the strategy's own
+// legs or items costs nothing and says only what the strategy already says.
+func fillMissingTitles(list []Strategy) {
+	for i := range list {
+		if strings.TrimSpace(list[i].Title) != "" {
+			continue
+		}
+		if t := deriveTitle(list[i]); t != "" {
+			list[i].Title = t
+			log.Printf("strategies[%d] (%s) had no title; derived %q", i, list[i].ID, t)
+		}
+	}
+}
+
+// deriveTitle: "A + B -> C" for a conversion with legs, else
+// "<archetype> <primary item>". Empty when there is nothing to name, so the
+// gate still rejects a strategy with no items.
+func deriveTitle(s Strategy) string {
+	if len(s.Legs) > 0 {
+		var buys, sells []string
+		for _, l := range s.Legs {
+			name := strings.TrimSpace(l.Name)
+			if l.Qty > 1 {
+				name = fmt.Sprintf("%d × %s", l.Qty, name)
+			}
+			if l.Side == "sell" {
+				sells = append(sells, name)
+			} else {
+				buys = append(buys, name)
+			}
+		}
+		if len(buys) > 0 && len(sells) > 0 {
+			return strings.Join(buys, " + ") + " → " + strings.Join(sells, " + ")
+		}
+	}
+	if len(s.Items) > 0 && strings.TrimSpace(s.Items[0].Name) != "" {
+		return fmt.Sprintf("%s %s", s.Archetype, strings.TrimSpace(s.Items[0].Name))
+	}
+	return ""
 }
