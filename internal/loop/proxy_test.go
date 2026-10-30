@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,13 +18,18 @@ import (
 )
 
 // fakeBackend stands in for the ge-mcp bridge: every call succeeds with a
-// small envelope except the tool named "boom", a transport failure.
+// small envelope except the tool named "boom", a transport failure, and
+// "slow", which only returns once its call is cancelled.
 type fakeBackend struct {
 	mu  sync.Mutex
 	log []mcpbridge.CallRecord
 }
 
-func (f *fakeBackend) Call(_ context.Context, name string, args json.RawMessage) (string, bool, error) {
+func (f *fakeBackend) Call(ctx context.Context, name string, args json.RawMessage) (string, bool, error) {
+	if name == "slow" {
+		<-ctx.Done() // a call kimi gives up on: the bridge sees its context end
+		return "", false, fmt.Errorf("call slow: transport error: %w", ctx.Err())
+	}
 	if name == "boom" {
 		return "", false, errors.New("call boom: broken pipe")
 	}
@@ -198,5 +204,22 @@ func TestProxyServesSubmitReport(t *testing.T) {
 	}
 	if !strings.Contains(string(tools["submit_report"].Tool.RawInputSchema), `"strategies"`) {
 		t.Error("submit_report must carry the report schema")
+	}
+}
+
+func TestProxyCancelledCallKeepsRunAlive(t *testing.T) {
+	h := testHandoff(t)
+	p := mustProxy(t, h)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	res, _ := p.callTool(ctx, callReq("slow", `{}`))
+	if !res.IsError || strings.HasPrefix(resultText(t, res), fatalPrefix) {
+		t.Errorf("result %q", resultText(t, res))
+	}
+	if got := readResult(t, h); got != nil {
+		t.Fatalf("a cancelled call settled the run: %+v", got)
+	}
+	if res, _ := p.callTool(context.Background(), callReq("quotes", `{}`)); res.IsError {
+		t.Errorf("the run is over after a cancelled call: %q", resultText(t, res))
 	}
 }

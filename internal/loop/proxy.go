@@ -163,6 +163,13 @@ func (p *proxy) callTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 		return mcp.NewToolResultError("arguments are not JSON: " + err.Error()), nil
 	}
 	text, isErr, err := p.backend.Call(ctx, req.Params.Name, args)
+	if err != nil && ctx.Err() != nil {
+		// kimi cancelled the call (its per-call tool timeout) and has already
+		// told the model it failed. ge-mcp is fine: one lost call must not cost
+		// the run, as it did run 8673.
+		log.Printf("  tool %s cancelled by kimi before ge-mcp answered: %v", req.Params.Name, err)
+		return mcp.NewToolResultError(fmt.Sprintf("tool %s was cancelled before ge-mcp answered (it ran past the per-call time limit); narrow the call or continue without it", req.Params.Name)), nil
+	}
 	if err != nil {
 		// A transport-level ge-mcp failure is not something the model can fix,
 		// so the run fails.
