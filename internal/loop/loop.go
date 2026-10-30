@@ -103,18 +103,8 @@ var submitReportDef = json.RawMessage(`{
       },
       "proposals": {
         "type": "array",
-        "description": "Optional, at most 3. Something worth the operator's attention that you can't ship: a recipe missing from item_relations, a new lane, a method change, a tool you lack. Only for something new: the brief lists what's already on file. An operator decides; nothing here trades.",
-        "items": {"type": "object", "properties": {
-          "kind": {"type": "string", "enum": ["recipe","lane","method","tool"]},
-          "title": {"type": "string", "description": "One line, under 120 characters"},
-          "detail": {"type": "string", "description": "What it is and why it would pay. Under 1000 characters"},
-          "evidence": {"type": "string", "description": "The tool calls and numbers from this run behind it. Under 1000 characters"},
-          "recipe": {"type": "object", "description": "kind recipe only: the conversion, per one conversion, as item_relations would hold it", "properties": {
-            "inputs": {"type": "array", "items": {"type": "object", "properties": {"item_id": {"type": "integer"}, "qty": {"type": "integer"}}, "required": ["item_id","qty"]}},
-            "outputs": {"type": "array", "items": {"type": "object", "properties": {"item_id": {"type": "integer"}, "qty": {"type": "integer"}}, "required": ["item_id","qty"]}},
-            "reversible": {"type": "boolean"}
-          }, "required": ["inputs","outputs"]}
-        }, "required": ["kind","title","detail","evidence"]}
+        "description": "Optional, at most 3. Something worth the operator's attention that you can't ship: a recipe missing from item_relations, a new lane, a method change, a tool you lack. Only for something new: the brief lists what's already on file. An operator decides; nothing here trades. Each object: kind (recipe, lane, method or tool); title (one line, under 120 characters); detail (what it is and why it would pay, under 1000 characters); evidence (the tool calls and numbers from this run behind it, under 1000 characters); recipe (kind recipe only: per one conversion, as item_relations would hold it, {inputs: [{item_id, qty}], outputs: [{item_id, qty}], reversible}, integers for item_id and qty). A malformed one is dropped and never costs you the report.",
+        "items": {"type": "object"}
       }
     },
     "required": ["markdown", "strategies"]

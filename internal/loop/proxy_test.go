@@ -345,3 +345,31 @@ func TestProxyCacheAgesFromCallStart(t *testing.T) {
 		t.Fatalf("an entry 61s past its start must refetch: %d backend calls", got)
 	}
 }
+
+// The Kimi CLI validates a tool call's arguments against this schema before the
+// call reaches the proxy, and rejects the whole call on a miss. A proposal is
+// optional, so its shape must stay in the description: a required field or an enum
+// here would let one bad proposal cost the report, past the reach of the 3-strike.
+func TestProposalsSchemaStaysLoose(t *testing.T) {
+	var def struct {
+		InputSchema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		} `json:"input_schema"`
+	}
+	if err := json.Unmarshal(submitReportDef, &def); err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := def.InputSchema.Properties["proposals"]
+	if !ok {
+		t.Fatal("submit_report has no proposals field")
+	}
+	var field struct {
+		Items map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &field); err != nil {
+		t.Fatal(err)
+	}
+	if len(field.Items) != 1 || field.Items["type"] != "object" {
+		t.Errorf("proposals items must be a bare object, got %v", field.Items)
+	}
+}

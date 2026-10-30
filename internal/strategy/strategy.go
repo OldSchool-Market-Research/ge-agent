@@ -145,7 +145,7 @@ type Strategy struct {
 //
 // Every free-text field on Strategy and Sidecar (Title, Thesis, Entry, Exit,
 // Evidence, ConfidenceWhy, Invalidation, Risks, Attention, Event.Description,
-// SignalVerdict.Reason, and item Name fields) is untrusted for HTML/markdown
+// SignalVerdict.Reason, Proposal's Title, Detail and Evidence, and item Name fields) is untrusted for HTML/markdown
 // rendering purposes. Validate only enforces structure (types, enums,
 // numeric ranges) — it does not sanitize prose, and the model can quote
 // upstream data verbatim (e.g. OSRS Wiki item names surfaced by ge-mcp,
@@ -394,7 +394,8 @@ func ParseProposals(raw json.RawMessage) ([]Proposal, int) {
 
 // normalize trims and bounds a proposal's text and reports whether it is usable.
 func (p *Proposal) normalize() bool {
-	p.Title = clip(p.Title, maxProposalTitle)
+	// one line: the orchestrator's next brief prints titles into the system prompt
+	p.Title = clip(strings.Join(strings.Fields(p.Title), " "), maxProposalTitle)
 	p.Detail = clip(p.Detail, maxProposalDetail)
 	p.Evidence = clip(p.Evidence, maxProposalDetail)
 	if p.Title == "" || p.Detail == "" {
