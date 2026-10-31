@@ -113,8 +113,9 @@ var submitReportDef = json.RawMessage(`{
 }`)
 
 const (
-	kickoffPrompt = "Run one full research cycle now, per the directive. Finish by calling submit_report with the complete report."
-	nudgePrompt   = "You have not submitted the report. Continue the cycle and finish by calling submit_report exactly once."
+	kickoffPrompt  = "Run one full research cycle now, per the directive. Finish by calling submit_report with the complete report."
+	evaluatePrompt = "Judge the packet in the run brief, per the directive, and call submit_report with the complete report."
+	nudgePrompt    = "You have not submitted the report. Continue the cycle and finish by calling submit_report exactly once."
 	// A model that stops talking instead of submitting is nudged this many
 	// times before the run fails.
 	maxNudges = 2

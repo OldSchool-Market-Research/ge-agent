@@ -822,6 +822,14 @@ const validP = `{
   "recipe_id": 16
 }`
 
+// Two ships with one id fail the whole run at ingest, past where the model can fix it.
+func TestValidateRefusesARepeatedID(t *testing.T) {
+	_, reason := Parse(json.RawMessage(`[` + validP + `,` + validP + `]`))
+	if !strings.Contains(reason, "strategies[1].id") {
+		t.Errorf("reason %q", reason)
+	}
+}
+
 func TestValidateP(t *testing.T) {
 	parse := func(raw string) string {
 		_, reason := Parse(json.RawMessage(`[` + raw + `]`))

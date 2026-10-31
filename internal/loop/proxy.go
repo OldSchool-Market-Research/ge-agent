@@ -91,6 +91,16 @@ type toolBackend interface {
 	AuditLog() []mcpbridge.CallRecord
 }
 
+// noTools is an evaluate run's backend: the proxy registers no ge-mcp tools, so
+// nothing can reach Call.
+type noTools struct{}
+
+func (noTools) Call(context.Context, string, json.RawMessage) (string, bool, error) {
+	return "", false, errors.New("evaluate mode has no ge-mcp tools")
+}
+
+func (noTools) AuditLog() []mcpbridge.CallRecord { return nil }
+
 type proxy struct {
 	backend toolBackend
 	h       proxyHandoff
@@ -113,6 +123,13 @@ func ServeProxy(ctx context.Context, cfg *config.Config) error {
 	h, err := handoffFromEnv()
 	if err != nil {
 		return err
+	}
+	if cfg.Evaluate {
+		p, err := newProxy(noTools{}, h)
+		if err != nil {
+			return err
+		}
+		return server.NewStdioServer(p.server(nil)).Listen(ctx, os.Stdin, os.Stdout)
 	}
 	bridge, err := mcpbridge.New(ctx, cfg.GeMcpPath, cfg.GeMcpDSN)
 	if err != nil {

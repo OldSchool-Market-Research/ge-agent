@@ -208,6 +208,23 @@ func TestProxyServesSubmitReport(t *testing.T) {
 	}
 }
 
+// An evaluate run's model sees submit_report and nothing else: a data tool in its
+// list is how a run goes back to costing a million tokens.
+func TestEvaluateProxyServesOnlySubmitReport(t *testing.T) {
+	h := testHandoff(t)
+	p, err := newProxy(noTools{}, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := p.server(nil).ListTools()
+	if tools["submit_report"] == nil || len(tools) != 1 {
+		t.Fatalf("tools: %v", tools)
+	}
+	if got := p.AuditLog(); len(got) != 0 {
+		t.Errorf("audit log %v", got)
+	}
+}
+
 func TestProxyCancelledCallKeepsRunAlive(t *testing.T) {
 	h := testHandoff(t)
 	p := mustProxy(t, h)

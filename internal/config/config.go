@@ -30,6 +30,11 @@ type Config struct {
 	// same-hour-of-week volume z-scores and the seasonal scan, so the proxy
 	// refuses those slow calls (~65s and ~110s) and points at the brief.
 	PrecomputedScans bool
+
+	// Evaluate (GE_AGENT_EVALUATE=1, set by the orchestrator) means the brief
+	// carries a script-built candidate packet: submit_report is the only tool,
+	// and ge-mcp isn't spawned.
+	Evaluate bool
 }
 
 func Load() (*Config, error) {
@@ -47,6 +52,7 @@ func Load() (*Config, error) {
 		KimiModel: os.Getenv("GE_AGENT_KIMI_MODEL"),
 
 		PrecomputedScans: getenvBool("GE_AGENT_PRECOMPUTED_SCANS"),
+		Evaluate:         getenvBool("GE_AGENT_EVALUATE"),
 	}
 	switch {
 	case c.GeMcpPath == "":
