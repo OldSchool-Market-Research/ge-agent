@@ -22,7 +22,8 @@ The run brief's **Packet** section has one JSON line per candidate:
 Every candidate has already passed the ship-time vet at this size: floors (C 200k gp per
 batch, P 250k gp per hour), buy limits, budget, size consistency, a fresh quote on every
 leg, not already open, not graveyarded, and for P, its 24h persistence. Don't redo that
-arithmetic. Anything a run recently dismissed is left out, so this list is what's new.
+arithmetic. Anything a run recently dismissed is normally left out, so this list is
+mostly what's new.
 
 ## What only you can judge
 
@@ -34,9 +35,9 @@ The script applies rules; it can't say whether a number means what it seems to.
   spread (`margin_collapse`).
 - `legs[].vol_4h` and `trades_24h`: a thin leg sets the real size. A batch that needs
   most of a leg's flow won't fill (`volume_dried`).
-- `worst_leg_age_ratio`: the oldest leg's quote age against its own trade cadence. The
-  script refuses anything past 3, or older than 6h. Close to 3, the margin rests on the
-  oldest print it would accept (`leg_stale`).
+- `worst_leg_age_ratio`: the highest quote age against a leg's own trade cadence, across
+  the legs. The script refuses anything past 3, or older than 6h. Close to 3, the margin
+  rests on the oldest print it would accept (`leg_stale`).
 - `output_change_7d_pct`: a falling output can eat the sell leg while the batch fills.
 - `harness_gp_per_1h`: the harness's haircut pace. Far below `per_1h_gp`, the claim
   won't survive paper trading.
@@ -91,7 +92,8 @@ The brief's **Assigned candidates** names each candidate's signal. Each needs an
 `signal_verdicts`: `shipped` with the strategy id as the reason, or `dismissed` with what
 killed it. A dismissal keeps that item out of the packet for 48 hours, and a second
 within 14 days keeps it out until its number doubles. When it does come back, your reason
-is shown beside its signal, so say what changed if you ship it.
+is shown beside its signal, so say what changed if you ship it. A signal you leave out
+counts as dismissed, so give each one its real reason.
 
 ## The report
 

@@ -482,10 +482,15 @@ func Validate(list []Strategy, now time.Time) string {
 	if len(list) > 10 {
 		return "strategies: at most 10 strategies"
 	}
+	seen := map[string]bool{}
 	for i, s := range list {
 		p := func(field, problem string) string {
 			return fmt.Sprintf("strategies[%d].%s: %s", i, field, problem)
 		}
+		if seen[s.ID] {
+			return p("id", "repeats an earlier strategy in this report: ship each one once")
+		}
+		seen[s.ID] = true
 		switch {
 		case !idRe.MatchString(s.ID):
 			return p("id", `must match ^[FBSVCUHP]-<item-slug>-<yyyymmdd>$ (e.g. "C-ahrims-armour-set-20260720")`)
