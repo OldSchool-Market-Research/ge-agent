@@ -20,8 +20,9 @@ The run brief's **Packet** section has one JSON line per candidate:
 - `draft`: the strategy's machine fields.
 
 Every candidate has already passed the ship-time vet at this size: floors (C 200k gp per
-batch, P 250k gp per hour), buy limits, budget, size consistency, not already open, not
-graveyarded, and for P, its 24h persistence. Don't redo that arithmetic.
+batch, P 250k gp per hour), buy limits, budget, size consistency, a fresh quote on every
+leg, not already open, not graveyarded, and for P, its 24h persistence. Don't redo that
+arithmetic. Anything a run recently dismissed is left out, so this list is what's new.
 
 ## What only you can judge
 
@@ -33,16 +34,19 @@ The script applies rules; it can't say whether a number means what it seems to.
   spread (`margin_collapse`).
 - `legs[].vol_4h` and `trades_24h`: a thin leg sets the real size. A batch that needs
   most of a leg's flow won't fill (`volume_dried`).
-- `worst_leg_age_ratio`: a leg's quote age against its own trade cadence. Around 3 or
-  below is normal. Well above it, the margin may be a stale print (`leg_stale`).
+- `worst_leg_age_ratio`: the oldest leg's quote age against its own trade cadence. The
+  script refuses anything past 3, or older than 6h. Close to 3, the margin rests on the
+  oldest print it would accept (`leg_stale`).
 - `output_change_7d_pct`: a falling output can eat the sell leg while the batch fills.
 - `harness_gp_per_1h`: the harness's haircut pace. Far below `per_1h_gp`, the claim
   won't survive paper trading.
 - `notes`: skill or quest gates go in `risks`.
 
 **Lane P facts:**
-- `hours_at_floor_24h` of `hours_24h`, and what caps `actions_per_hour`: it's a pace
-  someone has to click through, so say what it needs.
+- `hours_at_floor_24h` of `hours_24h`.
+- What caps `actions_per_hour`, read from `throughput`, `player_actions_per_hour`,
+  `limit_actions_per_hour` and `market_actions_per_hour` (the harness takes 15% of the
+  market's). It's a pace someone has to click through, so say what it needs.
 - `max_leg_age_s`, and `legs` for what's bought and sold each action.
 - `notes`: corrections and caveats on the recipe's data.
 
@@ -57,7 +61,8 @@ Don't discard on one soft reading alone, and don't ship on the gp number alone.
 ## Shipping a candidate
 
 Put its `draft` in `strategies`, **every field unchanged**. Never edit a price, a size or
-an expected value, or the ship-time vet will refuse it. Then add these fields:
+an expected value: they're what the vet passed and what the harness paper-trades. Then
+add these fields:
 
 - `title`: one line.
 - `thesis`: the claim and why the edge exists and persists.
@@ -82,9 +87,11 @@ own knowledge of the game gets marked "(unverified)".
 
 ## Signals
 
-The brief's **Assigned candidates** names the queue's signals. Each needs an entry in
+The brief's **Assigned candidates** names each candidate's signal. Each needs an entry in
 `signal_verdicts`: `shipped` with the strategy id as the reason, or `dismissed` with what
-killed it. Your dismissal reason is stored and shown to future runs.
+killed it. A dismissal keeps that item out of the packet for 48 hours, and a second
+within 14 days keeps it out until its number doubles. When it does come back, your reason
+is shown beside its signal, so say what changed if you ship it.
 
 ## The report
 
