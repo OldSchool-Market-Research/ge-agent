@@ -285,3 +285,13 @@ func TestDriveKimiTurnCap(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+func TestKimiPreambleNamesTheToolsTheRunHas(t *testing.T) {
+	at := time.Date(2026, 10, 31, 4, 0, 0, 0, time.UTC)
+	if got := kimiPreamble(at, true); strings.Contains(got, "combo_screen") || !strings.Contains(got, "mcp__ge__submit_report") {
+		t.Errorf("evaluate preamble %q", got)
+	}
+	if got := kimiPreamble(at, false); !strings.Contains(got, "mcp__ge__combo_screen") {
+		t.Errorf("research preamble %q", got)
+	}
+}

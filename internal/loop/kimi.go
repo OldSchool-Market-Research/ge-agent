@@ -48,7 +48,7 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	system, err := systemPrompt(cfg, kimiPreamble(runStart))
+	system, err := systemPrompt(cfg, kimiPreamble(runStart, cfg.Evaluate))
 	if err != nil {
 		return "", err
 	}
@@ -101,6 +101,9 @@ func Run(ctx context.Context, cfg *config.Config) (string, error) {
 // report was accepted.
 func driveKimi(ctx context.Context, cfg *config.Config, ws string, h proxyHandoff, st *kimiStream) (*proxyResult, error) {
 	prompt := kickoffPrompt
+	if cfg.Evaluate {
+		prompt = evaluatePrompt
+	}
 	for nudges := 0; ; nudges++ {
 		runErr := runKimiOnce(ctx, cfg, ws, h, st, prompt)
 		var res *proxyResult
@@ -274,7 +277,16 @@ func writeKimiWorkspace(ws, system, self string) error {
 	return os.WriteFile(filepath.Join(ws, ".kimi-code", "mcp.json"), mcpCfg, 0o644)
 }
 
-func kimiPreamble(runStart time.Time) string {
+func kimiPreamble(runStart time.Time, evaluate bool) string {
+	if evaluate {
+		return fmt.Sprintf(`## Harness notes (from the runtime, not the directive)
+- Current time: %s (UTC). Use this as the run timestamp in the report header.
+- Your one tool is mcp__ge__submit_report (the directive's submit_report). You have
+  no data, shell, file or web tools.
+- Do NOT write any file yourself. Finish by calling submit_report exactly once with
+  the complete markdown; the harness owns the filename.`,
+			runStart.Format("2006-01-02 15:04"))
+	}
 	return fmt.Sprintf(`## Harness notes (from the runtime, not the directive)
 - Current time: %s (UTC). Use this as the run timestamp in the report header.
 - Your tools are the directive's ge-mcp tools, named mcp__ge__<tool>

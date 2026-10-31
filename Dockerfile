@@ -17,6 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux \
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/ge-agent /ge-agent
 COPY DIRECTIVE.md /etc/ge-agent/DIRECTIVE.md
+COPY EVALUATE.md /etc/ge-agent/EVALUATE.md
 USER nonroot:nonroot
 ENV GE_AGENT_DIRECTIVE=/etc/ge-agent/DIRECTIVE.md
 ENTRYPOINT ["/ge-agent"]

@@ -89,6 +89,10 @@ func WriteSidecar(reportPath string, sc strategy.Sidecar) error {
 func appendix(calls []mcpbridge.CallRecord) string {
 	var b strings.Builder
 	b.WriteString("\n\n---\n\n## Appendix: harness tool-call log (auto-generated)\n\n")
+	if len(calls) == 0 {
+		b.WriteString("No ge-mcp calls were made this run. Any numbers above come from the packet in the run's brief.\n")
+		return b.String()
+	}
 	b.WriteString("Every ge-mcp call made this run, recorded by the harness — not the model. ")
 	b.WriteString("Numbers in the Proof section that do not appear in a result below were not returned by any tool.\n\n")
 	for _, c := range calls {

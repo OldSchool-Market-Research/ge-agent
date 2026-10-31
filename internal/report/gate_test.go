@@ -72,3 +72,11 @@ func TestFenceLen(t *testing.T) {
 		}
 	}
 }
+
+// An evaluate run makes no tool calls, and its numbers come from the brief's packet.
+func TestAppendixWithoutCallsNamesThePacket(t *testing.T) {
+	got := appendix(nil)
+	if !strings.Contains(got, "packet") || strings.Contains(got, "were not returned by any tool") {
+		t.Errorf("appendix %q", got)
+	}
+}
